@@ -7419,6 +7419,163 @@ window.addEventListener("pageshow", verificaVirada);
 window.addEventListener("focus", verificaVirada);
 setInterval(verificaVirada, 60000);
 
+/* ================= refeição em andamento: rascunho que não se perde ================= */
+const CHAVE_RASC_REF="ficha:refRascunhos", CHAVE_RASC_PROD="ficha:prodRascunho", VALIDADE_RASC=3*86400000;
+function lerRascunhosRef(){
+  try{
+    const o=JSON.parse(localStorage.getItem(CHAVE_RASC_REF)||"{}")||{};
+    const agora=Date.now(); let mudou=false;
+    Object.keys(o).forEach(k=>{ if(!o[k] || agora-(o[k].t||0)>VALIDADE_RASC){ delete o[k]; mudou=true; } });
+    if(mudou) gravaRascunhosRef(o);
+    return o;
+  }catch(e){ return {}; }
+}
+function gravaRascunhosRef(o){
+  try{
+    if(Object.keys(o).length) localStorage.setItem(CHAVE_RASC_REF, JSON.stringify(o));
+    else localStorage.removeItem(CHAVE_RASC_REF);
+  }catch(e){}
+}
+function chaveRascunhoRef(){ return dataSel+"|"+(editando==null? "novo" : "ed"+editando); }
+function fluxoRefAtivo(){
+  return folhaRef.classList.contains("on") || $("folhaQtd").classList.contains("on") || folhaProd.classList.contains("on");
+}
+function salvaRascunhoRef(){
+  if(!fluxoRefAtivo()) return;
+  const o=lerRascunhosRef(), k=chaveRascunhoRef();
+  const txt=$("refTxt").value||"";
+  if(!itensRef.length && !txt.trim()){ if(o[k]){ delete o[k]; gravaRascunhosRef(o); } return; }
+  o[k]={iso:dataSel, novo:editando==null, idx:editando, tipo:$("refTit").textContent, txt, t:Date.now(),
+        itens:itensRef.map(x=>({...x})),
+        base: editando==null? null : JSON.stringify(dia.refeicoes[editando]||null)};
+  gravaRascunhosRef(o);
+}
+const pintaTotRasc = pintaTot;
+pintaTot = function(){ pintaTotRasc(); salvaRascunhoRef(); };
+$("refTxt").addEventListener("input", salvaRascunhoRef);
+
+function aplicaRascunhoRef(){
+  const o=lerRascunhosRef(), k=chaveRascunhoRef(), r=o[k];
+  if(!r) return false;
+  if(r.base!=null && r.base!==JSON.stringify(dia.refeicoes[editando]||null)){   // a refeição mudou: rascunho velho
+    delete o[k]; gravaRascunhosRef(o); return false; }
+  if(!(r.itens&&r.itens.length) && !(r.txt||"").trim()) return false;
+  itensRef=(r.itens||[]).map(x=>({...x}));
+  $("refTxt").value=r.txt||"";
+  pintaItens();
+  toast("Rascunho recuperado: "+itensRef.length+" item(ns).");
+  return true;
+}
+const addRefRasc=$("addRef").onclick;
+$("addRef").onclick=function(){
+  addRefRasc.apply(this,arguments);
+  if(folhaRef.classList.contains("on")) aplicaRascunhoRef();
+};
+const editarRefRasc=editarRef;
+editarRef=function(i){
+  editarRefRasc(i);
+  if(folhaRef.classList.contains("on")) aplicaRascunhoRef();
+};
+const refSalvarRasc=$("refSalvar").onclick;
+$("refSalvar").onclick=async function(){
+  const k=chaveRascunhoRef(), antes=JSON.stringify(dia.refeicoes);
+  await refSalvarRasc.apply(this,arguments);
+  if(JSON.stringify(dia.refeicoes)!==antes){
+    const o=lerRascunhosRef(); delete o[k]; gravaRascunhosRef(o);
+  }
+};
+function reabreRascunhoRef(r){
+  if(dataSel!==r.iso){ dataSel=r.iso; carrega(r.iso); pintaNutri(); }
+  if(r.novo){ $("tipoRef").value=r.tipo; $("addRef").click(); } else editarRef(r.idx);
+}
+$("refCancelar").onclick=()=>{
+  const k=chaveRascunhoRef(), o=lerRascunhosRef(), r=o[k];
+  fechaRef();
+  if(r){
+    delete o[k]; gravaRascunhosRef(o);
+    toast("Refeição descartada.", ()=>{ const o2=lerRascunhosRef(); o2[k]=r; gravaRascunhosRef(o2); reabreRascunhoRef(r); });
+  }
+};
+const AVISO_RASC="Refeição guardada como rascunho. Toque em + para continuar.";
+const voltarRasc=voltarUmPasso;
+voltarUmPasso=function(){
+  if($("folhaQtd").classList.contains("on")){ fechaQtd(); return true; }
+  if(folhaProd.classList.contains("on")){ folhaProd.classList.remove("on"); folhaRef.classList.add("on"); return true; }
+  const tinha=folhaRef.classList.contains("on") && itensRef.length>0;
+  const r=voltarRasc();
+  if(tinha) toast(AVISO_RASC);
+  return r;
+};
+veu2.onclick=()=>{
+  if($("folhaQtd").classList.contains("on")){ fechaQtd(); return; }
+  if(folhaProd.classList.contains("on")){ folhaProd.classList.remove("on"); folhaRef.classList.add("on"); return; }
+  const tinha=folhaRef.classList.contains("on") && itensRef.length>0;
+  fechaRef();
+  if(tinha) toast(AVISO_RASC);
+};
+
+/* cadastro pelo rótulo: o que foi digitado também fica guardado */
+function lerRascunhoProd(){
+  try{ const r=JSON.parse(localStorage.getItem(CHAVE_RASC_PROD)||"null");
+    return r && Date.now()-(r.t||0)<VALIDADE_RASC? r : null; }catch(e){ return null; }
+}
+function limpaRascunhoProd(){ try{ localStorage.removeItem(CHAVE_RASC_PROD); }catch(e){} }
+function salvaRascunhoProd(){
+  if(!folhaProd.classList.contains("on")) return;
+  const r={nome:$("pdNome").value, porc:$("pdPorc").value, kcal:$("pdKcal").value,
+           prot:$("pdProt").value, peso:$("pdPeso").value, unid:pdUnid, t:Date.now()};
+  if(!r.nome.trim() && !r.kcal.trim() && !r.prot.trim()){ limpaRascunhoProd(); return; }
+  try{ localStorage.setItem(CHAVE_RASC_PROD, JSON.stringify(r)); }catch(e){}
+}
+["pdNome","pdPorc","pdKcal","pdProt","pdPeso"].forEach(id=>$(id).addEventListener("input", salvaRascunhoProd));
+$("pdUn").querySelectorAll("[data-pu]").forEach(b=>b.addEventListener("click", salvaRascunhoProd));
+const abreProdutoRasc=abreProduto;
+abreProduto=function(nome){
+  abreProdutoRasc(nome);
+  const r=lerRascunhoProd();
+  if(r && (!String(nome||"").trim() || String(nome).trim().toLowerCase()===String(r.nome||"").trim().toLowerCase())){
+    pdUnid=r.unid||"g"; pintaPdUn();
+    $("pdNome").value=r.nome||""; $("pdPorc").value=r.porc||""; $("pdKcal").value=r.kcal||"";
+    $("pdProt").value=r.prot||""; $("pdPeso").value=r.peso||"";
+    toast("Cadastro em andamento recuperado.");
+  }
+};
+const pdSalvarRasc=$("pdSalvar").onclick;
+$("pdSalvar").onclick=function(){
+  const n=CATALOGO_AL.length;
+  pdSalvarRasc.apply(this,arguments);
+  if(CATALOGO_AL.length>n) limpaRascunhoProd();
+};
+const pdCancelarRasc=$("pdCancelar").onclick;
+$("pdCancelar").onclick=function(){
+  const r=lerRascunhoProd();
+  pdCancelarRasc.apply(this,arguments);
+  if(r){
+    limpaRascunhoProd();
+    toast("Cadastro descartado.", ()=>{ try{ localStorage.setItem(CHAVE_RASC_PROD, JSON.stringify(r)); }catch(e){} abreProduto(r.nome); });
+  }
+};
+
+/* rascunho esquecido aparece como pendência na tela inicial */
+const listaPendenciasRasc=listaPendencias;
+listaPendencias=function(){
+  const p=listaPendenciasRasc();
+  const o=lerRascunhosRef();
+  Object.keys(o).sort((a,b)=>o[b].t-o[a].t).slice(0,1).forEach(k=>{
+    const r=o[k], n=(r.itens||[]).length;
+    p.unshift({k:"refrasc", t:"Refeição em andamento",
+      s:(r.tipo||"Refeição")+" · "+n+" item(ns) · "+(r.iso===HOJE_ISO? "hoje" : r.iso.split("-").reverse().slice(0,2).join("/")),
+      abrir:()=>{ pintaNutri(); mostra("nutri"); reabreRascunhoRef(r); },
+      fechar:()=>{ const o2=lerRascunhosRef(); delete o2[k]; gravaRascunhosRef(o2); }});
+  });
+  return p.slice(0,3);
+};
+const resetOkRasc=$("resetOk").onclick;
+$("resetOk").onclick=async function(){
+  try{ localStorage.removeItem(CHAVE_RASC_REF); localStorage.removeItem(CHAVE_RASC_PROD); }catch(e){}
+  return resetOkRasc.apply(this,arguments);
+};
+
 restaurarEstado().catch(()=>toast("Não consegui carregar todos os dados salvos."));
 </script>
 </body>
