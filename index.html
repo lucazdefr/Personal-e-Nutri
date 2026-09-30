@@ -852,6 +852,14 @@ small.bom{color:var(--verde)} small.ruim{color:var(--vermelho)} small.zero{color
 .serie-uni .cab-s{display:flex;align-items:center;gap:11px}
 .serie-uni .cab-s .s{width:17px}
 .serie-uni .cab-s .tt{flex:1;font-size:11.5px;color:var(--fraco)}
+.serie-dual{display:flex;align-items:center;gap:8px;padding:5px 0}
+.serie-dual .s{font-size:11.5px;color:var(--fraco);width:17px;flex:none;font-variant-numeric:tabular-nums}
+.serie-dual .cx{flex:1;min-width:0;text-align:center}
+.serie-dual.ok .marca{border-color:transparent;background:var(--verde);color:#06180D}
+.cab-dual{display:flex;gap:8px;font-size:11.5px;color:var(--fraco);padding:2px 0 0}
+.cab-dual span{flex:1;text-align:center}
+.cab-dual span:first-child{flex:none;width:17px}
+.cab-dual span:last-child{flex:none;width:34px}
 
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -1380,7 +1388,7 @@ const FICHAS = {
    alt:["Leg Press Horizontal","Agachamento no Squat","Búlgaro"]},
   {n:"Cadeira Abdutora", a:[], h:[],
    alt:["Elevação Pélvica","Cadeira Flexora"]},
-  {n:"Abdominal Supra e Infra", simples:true}]},
+  {n:"Abdominal Supra e Infra", a:[], h:[], alt:[], ns:3}]},
 
  D:{grupo:"Superior misto", ultimo:"", ex:[
   {n:"Supino Máquina Inclinado", a:[], h:[],
@@ -1400,7 +1408,8 @@ const FICHAS = {
 const TEMPOS = [30,40,60,90,120,150,180,210,240,300];
 /* memória de descanso por exercício — na vida real vem do banco */
 const descanso = {"Agachamento no Squat":150,"Leg Press Horizontal":180,
-                  "Rosca Bayesian na Polia":60,"Elevação Lateral na Polia":60};
+                  "Rosca Bayesian na Polia":60,"Elevação Lateral na Polia":60,
+                  "Abdominal Supra e Infra":60};
 
 let pesoHoje=null, fichaAtual=null, est=[];
 const timers = {};
@@ -3482,7 +3491,8 @@ function abreEdicaoSessao(iso){
   const det=t.detalhe||[];
   est = (det.length? det : (modelo? modelo.ex.map(e=>({nome:e.n,orig:null,series:[null,null,null]})):[]))
     .map(e=>({nome:e.nome, orig:e.orig||null,
-              simples:/abdominal/i.test(e.nome),
+              simples:/abdominal/i.test(e.nome) && (e.series||[]).some(x=>x!=null) &&
+                      (e.series||[]).every(x=>x==null || STATUS.has(String(x).trim().toUpperCase())),
               series:(e.series||[null,null,null]).slice(),
               t:(descanso[e.nome]||90)}));
   cardio={fez: !!t.cardio, texto: t.cardio||""};
@@ -6928,23 +6938,30 @@ kcalSerie = function(nome, txt, descSeg, pesoCorpo){
   const m=(typeof metaDe==="function"? metaDe(nome):null);
   const pad=m? m[4] : "abd-supra";
   const graus=(INCL_ABD[nome]||0);
-  const a=leAbd(txt) || {peso:0, reps:(txt? 15 : 0)};
+  const infra=/infra/i.test(nome);
+  /* "feito" sem número (registro antigo) conta as repetições padrão em vez de zerar */
+  const a=leAbd(txt) || {peso:0, reps:(txt? 15 : (infra? REPS_PADRAO_ABD.infra : REPS_PADRAO_ABD.supra))};
   if(!a.reps) return 0;
+  const kDescanso=MET_DESCANSO*p*((descSeg||60)/3600);
+  return kcalAbdParte(pad, infra, a, p, graus) + kDescanso;
+};
+/* esforço + trabalho de uma série de supra ou de infra (sem o descanso) */
+const REPS_PADRAO_ABD = {supra:15, infra:10};
+function kcalAbdParte(pad, infra, a, p, graus){
+  if(!a || !a.reps) return 0;
   /* inclinação aumenta a carga do próprio corpo */
   const met=(MET_ABD[pad]||4.0)*(1+graus/90*0.35);
   const tSerie=a.reps*3.2;
   const kEsforco=met*p*(tSerie/3600);
-  const kDescanso=MET_DESCANSO*p*((descSeg||60)/3600);
   /* trabalho: fração do tronco (ou pernas) + peso extra */
   /* infra move as duas pernas (~32% do corpo) num arco maior;
      supra move tronco e braços (~30%) num arco curto */
-  const infra=/infra/i.test(nome);
   const fracao = infra? 0.32 : 0.30;
   const arco   = infra? 0.45 : 0.22;
   const massa = p*fracao*(1+graus/90*0.5) + (a.peso||0);
   const trab = massa*9.81*arco*a.reps;
-  return kEsforco + kDescanso + (trab*F_EXC/EFIC)/4184;
-};
+  return kEsforco + (trab*F_EXC/EFIC)/4184;
+}
 /* inclinação por exercício, com persistência */
 const estadoAbd = estadoAtual;
 estadoAtual = function(){ return {...estadoAbd(), inclAbd:INCL_ABD}; };
@@ -6954,38 +6971,90 @@ restaurarEstado = async function(){
   try{ const e=await BD.get("estado"); if(e && e.inclAbd) Object.assign(INCL_ABD, e.inclAbd); }catch(x){}
 };
 
-/* ================= migrar os abdominais antigos ================= */
-function migraAbdominais(){
+/* ================= abdominal supra e infra: duas caixas por série, migração dos registros antigos ================= */
+const ABD_DUAL="Abdominal Supra e Infra";
+const ABD_PAR=["Abdominal Supra Deitado","Abdominal Infra Deitado"];
+const ABD_LEG=/^abdominal( supra e infra)?$/i;
+function ehDual(nome){ return nome===ABD_DUAL; }
+/* a série guarda "supra | infra"; cada lado aceita "20" ou "0x20" (0x20 = sem peso, 20 repetições) */
+function partesDual(txt){
+  const p=String(txt==null?"":txt).split("|").map(x=>x.trim());
+  return {s:p[0]||"", i:p[1]||""};
+}
+function juntaDual(s,i){ return (s||"").trim()+" | "+(i||"").trim(); }
+function ehStatusTxt(x){ return typeof x==="string" && STATUS.has(x.trim().toUpperCase()); }
+function serieFeita(v){
+  if(v==null) return false;
+  const s=String(v).trim(); if(!s) return false;
+  return /^RE$/i.test(s) || !STATUS.has(s.toUpperCase());
+}
+/* séries do registro mais recente do exercício, para a dica "última vez" */
+function ultimaSerieDual(exceto){
+  let achou=null;
+  Object.keys(DIAS).sort().forEach(iso=>{
+    if(iso===exceto) return;
+    const t=DIAS[iso].treino; if(!t || t==="descanso" || !t.detalhe) return;
+    const e=t.detalhe.find(x=>ehDual(x.nome) && (x.series||[]).some(v=>typeof v==="string" && v.includes("|")));
+    if(e) achou=e.series.filter(v=>v!=null);
+  });
+  return achou||[];
+}
+/* ficha: o abdominal antigo (Realizado/Não realizado, ou o par supra + infra da migração anterior) vira um exercício só */
+function normalizaFichasAbd(){
   let mudou=false;
-  Object.entries(DIAS).forEach(([iso,d])=>{
-    const t=d.treino;
-    if(!t || t==="descanso" || !t.detalhe) return;
-    const novo=[];
-    t.detalhe.forEach(e=>{
-      const soRE=(e.series||[]).some(s=>typeof s==="string" && /^RE$/i.test(s.trim()));
-      const generico=/^abdominal( supra e infra)?$/i.test((e.nome||"").trim());
-      if(generico && soRE){
-        novo.push({nome:"Abdominal Supra Deitado", orig:e.orig||null, series:["20","20","20"]});
-        novo.push({nome:"Abdominal Infra Deitado", orig:null, series:["15","15","15"]});
-        mudou=true;
-      } else novo.push(e);
-    });
-    if(mudou) t.detalhe=novo;
-  });
-  /* a ficha também passa a ter os dois */
   Object.values(FICHAS).forEach(f=>{
-    const i=f.ex.findIndex(e=>/^abdominal( supra e infra)?$/i.test(e.n));
-    if(i<0) return;
-    const base=f.ex[i];
-    f.ex.splice(i,1,
-      {...base, n:"Abdominal Supra Deitado", simples:false, a:["20","20","20"], ns:base.ns||3},
-      {n:"Abdominal Infra Deitado", simples:false, a:["15","15","15"], h:[], alt:[], ns:base.ns||3});
-    mudou=true;
+    const ex=f.ex||[];
+    const novoEx=()=>({n:ABD_DUAL, a:ultimaSerieDual(), h:[], alt:[], ns:3});
+    const i=ex.findIndex(e=>ABD_LEG.test((e.n||"").trim()) && (e.simples || !ehDual(e.n)));
+    if(i>=0){ ex.splice(i,1,novoEx()); mudou=true; }
+    const j=ex.findIndex((e,k)=>e.n===ABD_PAR[0] && ex[k+1] && ex[k+1].n===ABD_PAR[1] &&
+      JSON.stringify(e.a)==='["20","20","20"]' && JSON.stringify(ex[k+1].a)==='["15","15","15"]');
+    if(j>=0){ ex.splice(j,2,novoEx()); mudou=true; }
   });
-  if(mudou){ salvar(); if(typeof desenhaCards==="function") desenhaCards(); }
+  if(mudou && descanso[ABD_DUAL]==null) descanso[ABD_DUAL]=60;
   return mudou;
 }
-
+function recalculaSessao(iso, d){
+  const t=d.treino;
+  t.series=(t.detalhe||[]).reduce((a,e)=>{
+    const ser=(e.series||[]).filter(v=>v!=null);
+    return a + (ser.some(v=>!ehStatusTxt(v))? ser.length : 0);
+  },0);
+  t.kcal=kcalDeDia(iso,d);
+}
+/* treinos já registrados: abdominal feito vira 3 séries, supra 15 e infra 10 repetições */
+function convertaSessoesAbd(){
+  let mudou=false;
+  Object.entries(DIAS).forEach(([iso,d])=>{
+    const t=d.treino; if(!t || t==="descanso" || !t.detalhe) return;
+    const det=t.detalhe, idx=[];
+    det.forEach((e,k)=>{ const n=(e.nome||"").trim(); if(ABD_LEG.test(n) || ABD_PAR.includes(n)) idx.push(k); });
+    if(!idx.length) return;
+    const jaNovo=idx.every(k=>ehDual(det[k].nome) && (det[k].series||[]).some(v=>typeof v==="string" && v.includes("|")));
+    if(jaNovo) return;
+    if(!idx.some(k=>(det[k].series||[]).some(serieFeita))) return;     // não realizado: fica como está
+    const fora=det.filter((e,k)=>!idx.includes(k));
+    fora.splice(Math.min(idx[0], fora.length), 0,
+      {nome:ABD_DUAL, orig:null, series:["0x15 | 0x10","0x15 | 0x10","0x15 | 0x10"]});
+    t.detalhe=fora;
+    recalculaSessao(iso,d);
+    mudou=true;
+  });
+  return mudou;
+}
+/* ajuste pontual pedido pelo usuário: treino de 30/09/2026, supra 20 e infra 15, 14 e 12 */
+function ajusteAbdHoje(){
+  const iso="2026-09-30", d=DIAS[iso];
+  if(!d || !d.treino || d.treino==="descanso") return false;
+  const t=d.treino, vals=["0x20 | 0x15","0x20 | 0x14","0x20 | 0x12"];
+  t.detalhe=t.detalhe||[];
+  const e=t.detalhe.find(x=>ehDual(x.nome));
+  if(e) e.series=vals.slice();
+  else if(((FICHAS[t.ficha]||{}).ex||[]).some(x=>ehDual(x.n))) t.detalhe.push({nome:ABD_DUAL, orig:null, series:vals.slice()});
+  else return false;
+  recalculaSessao(iso,d);
+  return true;
+}
 /* ================= exercícios unilaterais: lado E e lado D ================= */
 function ehUnilateral(nome){
   const inf=(typeof infoEx==="function")? infoEx(nome) : null;
@@ -7252,14 +7321,7 @@ gastoDia = (function(orig){
   };
 })(gastoDia);
 
-/* migração dos abdominais antigos, uma vez só */
-setTimeout(()=>{ try{
-  if(!localStorage.getItem("ficha:migAbd")){
-    const m=migraAbdominais();
-    localStorage.setItem("ficha:migAbd","1");
-    if(m && typeof toast==="function") toast("Abdominais antigos convertidos em supra 3×20 e infra 3×15.");
-  }
-}catch(e){} }, 2500);
+
 
 /* ================= gerenciar catálogo de produtos (editar/excluir) ================= */
 let catEditIdx=null;
@@ -7403,7 +7465,7 @@ $("arqBackup").onchange=e=>{
         return; }
       const anterior=JSON.parse(JSON.stringify(estadoAtual()));
       await BD.set("estado_anterior", anterior);
-      await BD.set("estado", {...anterior, ...dados});
+      await BD.set("estado", {...anterior, ...dados, ...("dias" in dados? {abdV:dados.abdV||1} : {})});
       await restaurarEstado();
       toast("Backup restaurado.", ()=>{ voltaEstadoAnterior(); });
     }catch(x){ toast(x && x.message? x.message : "Arquivo não reconhecido."); }
@@ -7592,6 +7654,115 @@ const resetOkRasc=$("resetOk").onclick;
 $("resetOk").onclick=async function(){
   try{ localStorage.removeItem(CHAVE_RASC_REF); localStorage.removeItem(CHAVE_RASC_PROD); }catch(e){}
   return resetOkRasc.apply(this,arguments);
+};
+
+/* ================= abdominal supra | infra: cálculo de calorias ================= */
+const kcalSerieDual = kcalSerie;
+kcalSerie = function(nome, txt, descSeg, pesoCorpo){
+  if(!ehDual(nome)) return kcalSerieDual(nome, txt, descSeg, pesoCorpo);
+  const p = pesoCorpo || (typeof pesoAtual==="function" && pesoAtual()) || 0;
+  if(!p) return 0;
+  const graus=(INCL_ABD[nome]||0);
+  const semNumero = String(txt==null?"":txt).trim()==="";          // "feito" antigo, sem repetições
+  const {s,i}=partesDual(txt);
+  const as = semNumero? {peso:0, reps:REPS_PADRAO_ABD.supra} : leAbd(s);
+  const ai = semNumero? {peso:0, reps:REPS_PADRAO_ABD.infra} : leAbd(i);
+  if(!as && !ai) return 0;
+  const kDescanso=MET_DESCANSO*p*((descSeg||60)/3600);
+  return kcalAbdParte("abd-supra", false, as, p, graus) + kcalAbdParte("abd-infra", true, ai, p, graus) + kDescanso;
+};
+
+/* ================= abdominal supra | infra: duas caixas lado a lado na tela do treino ================= */
+function confirmaDual(i,s){
+  const cs=$("cs"+i+"_"+s), ci=$("ci"+i+"_"+s); if(!cs||!ci) return;
+  const bl=cs.closest(".serie-dual");
+  if(est[i].series[s]!=null){                                      // desfazer
+    est[i].series[s]=null; cs.disabled=false; ci.disabled=false;
+    bl.classList.remove("ok"); soma(); return;
+  }
+  const usa=el=>{ const v=(el.value||"").trim(); if(v) return v;
+    const ph=(el.placeholder||"").trim(); return leAbd(ph)? ph : ""; };   // campo vazio repete a última vez
+  const vs=usa(cs), vi=usa(ci);
+  if(vs && !leAbd(vs)){ toast("Supra inválido. Use 20 ou 0x20."); cs.focus(); return; }
+  if(vi && !leAbd(vi)){ toast("Infra inválido. Use 20 ou 0x20."); ci.focus(); return; }
+  if(!vs && !vi){ toast("Preencha o supra e o infra."); cs.focus(); return; }
+  est[i].series[s]=juntaDual(vs,vi);
+  cs.value=vs; ci.value=vi; cs.disabled=true; ci.disabled=true;
+  bl.classList.add("ok"); soma();
+  if(!timers[i] && ALVOS[i]==null && s<2) play(i);                  // descanso começa sozinho
+  const prox=$("cs"+i+"_"+(s+1)) || $("c"+(i+1)+"_0");
+  if(prox && !prox.disabled && !prox.readOnly) prox.focus();
+}
+const desenhaDualUI = desenha;
+desenha = function(){
+  desenhaDualUI();
+  if(!fichaAtual || !est) return;
+  est.forEach((e,i)=>{
+    if(e.simples || !ehDual(e.nome)) return;
+    const bloco=document.querySelectorAll("#lista .ex")[i]; if(!bloco) return;
+    const ult=ultimaSerieDual(editandoSessao||null);               // registro mais recente do exercício
+    e.series.forEach((val,s)=>{
+      const linha=$("l"+i+"_"+s); if(!linha || linha.dataset.dual) return;
+      linha.dataset.dual="1";
+      const cx=$("c"+i+"_"+s), v=partesDual(val||"");
+      let ph=partesDual(cx? cx.placeholder : "");
+      if(!leAbd(ph.s) && !leAbd(ph.i)) ph=partesDual(ult[s]||"");
+      if(!bloco.querySelector(".cab-dual")){
+        const cab=document.createElement("div"); cab.className="cab-dual";
+        cab.innerHTML='<span></span><span>supra</span><span>infra</span><span></span>';
+        linha.parentNode.insertBefore(cab, linha);
+      }
+      const campo=(pref,valor,dica)=>'<input class="cx" id="'+pref+i+'_'+s+'" inputmode="text" autocomplete="off" '+
+        'autocapitalize="off" spellcheck="false" placeholder="'+dica+'" value="'+valor+'"'+(val!=null?' disabled':'')+'>';
+      const bl=document.createElement("div");
+      bl.className="serie-dual"+(val!=null? " ok" : "");
+      bl.innerHTML='<span class="s">'+(s+1)+'</span>'+
+        campo("cs",v.s,leAbd(ph.s)? ph.s : "ex. 0x20")+
+        campo("ci",v.i,leAbd(ph.i)? ph.i : "ex. 0x15")+
+        '<button class="marca" data-md="'+i+'_'+s+'">✓</button>';
+      linha.parentNode.insertBefore(bl, linha);
+      linha.style.display="none";
+    });
+    const cfg=bloco.querySelector(".abd-cfg span:last-child");
+    if(cfg) cfg.textContent="supra à esquerda, infra à direita · 0x20 = sem peso e 20 repetições";
+    const hist=bloco.querySelector(".hist");
+    if(hist && ult.length) hist.textContent="última vez  "+ult.join(" · ");
+  });
+  document.querySelectorAll("[data-md]").forEach(b=> b.onclick=()=>{
+    const [i,s]=b.dataset.md.split("_").map(Number); confirmaDual(i,s); });
+  document.querySelectorAll(".serie-dual .cx").forEach(el=> el.addEventListener("keydown",ev=>{
+    if(ev.key!=="Enter") return; ev.preventDefault();
+    const m=el.id.match(/^c([si])(\d+)_(\d+)$/); if(!m) return;
+    const i=+m[2], s=+m[3];
+    if(m[1]==="s"){ const nx=$("ci"+i+"_"+s); if(nx && !nx.disabled){ nx.focus(); return; } }
+    confirmaDual(i,s);
+  }));
+};
+
+/* ================= abdominais: conversão dos registros antigos (uma vez por conjunto de dados) ================= */
+let abdVMem=null;                         // versão do formato dos abdominais nos dados carregados
+const estadoAbdV = estadoAtual;
+estadoAtual = function(){ return {...estadoAbdV(), abdV:(abdVMem==null? 2 : abdVMem)}; };
+const restaurarAbdV = restaurarEstado;
+restaurarEstado = async function(){
+  abdVMem=1;                              // até saber o que foi carregado, nada é marcado como convertido
+  await restaurarAbdV();
+  let e=null; try{ e=await BD.get("estado"); }catch(x){}
+  const legado = !!e && (e.abdV||1)<2;
+  let fichas=normalizaFichasAbd(), sessoes=false;
+  if(legado){
+    sessoes=convertaSessoesAbd();
+    if(ajusteAbdHoje()) sessoes=true;
+    const ult=ultimaSerieDual();
+    Object.values(FICHAS).forEach(f=>(f.ex||[]).forEach(x=>{ if(ehDual(x.n) && !(x.a&&x.a.length)){ x.a=ult.slice(); fichas=true; } }));
+  }
+  abdVMem=2;
+  if(fichas || sessoes || legado){
+    if(typeof desenhaCards==="function") desenhaCards();
+    pintaHome();
+    if(window.gravaAgora) await window.gravaAgora();
+    if(sessoes) toast("Abdominais atualizados: supra e infra lado a lado; treinos antigos com 3 séries (supra 15, infra 10).");
+  }
 };
 
 restaurarEstado().catch(()=>toast("Não consegui carregar todos os dados salvos."));
