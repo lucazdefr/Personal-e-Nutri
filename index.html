@@ -860,6 +860,13 @@ small.bom{color:var(--verde)} small.ruim{color:var(--vermelho)} small.zero{color
 .cab-dual span{flex:1;text-align:center}
 .cab-dual span:first-child{flex:none;width:17px}
 .cab-dual span:last-child{flex:none;width:34px}
+.ex.pulado > *:not(.cab):not(.subst):not(.pulado-nota){display:none}
+.ex.pulado .nome{opacity:.55;text-decoration:line-through}
+.pulado-nota{font-size:12.5px;color:var(--fraco);padding:4px 0 2px}
+.trocar.pular{color:var(--fraco)}
+.add-ex{padding:14px 20px 4px}
+.add-ex button{width:100%;background:none;border:1px dashed var(--linha2);color:var(--medio);border-radius:11px;padding:13px;font-size:14px}
+.add-ex button:active{border-color:var(--brasa);color:var(--brasa)}
 
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -1484,8 +1491,7 @@ $("voltarC2").onclick=()=>{ pintaHome(); mostra("casa"); };
 function desenha(){
   const lista=$("lista"); lista.innerHTML="";
   est.forEach((e,i)=>{
-    const modelo=(FICHAS[fichaAtual]&&FICHAS[fichaAtual].ex)||[];
-    const ex = modelo.find(x=>x.n===e.nome) || modelo[i] || {n:e.nome,a:[],h:[],alt:[]};
+    const ex = exAnterior(e);          // "última vez" = a última vez em que ESTE exercício foi feito
     const d=document.createElement("div"); d.className="ex";
     if(e.simples){
       d.innerHTML=`<div class="cab"><div class="nome">${e.nome}</div></div>
@@ -1494,15 +1500,15 @@ function desenha(){
           <button data-simples="${i}_RE">Realizado</button>
           <button data-simples="${i}_NRE">Não realizado</button></div>`;
     } else {
-      const parou = e.orig?0:estagnado(ex.h);
+      const parou = estagnado(ex.h);
       d.innerHTML=`
         <div class="cab"><div class="nome">${e.nome}</div>
           <button class="trocar" data-t="${i}">substituir</button></div>
         ${e.orig?`<div class="subst">no lugar de ${e.orig}</div>`:""}
         <div class="faixa">
-          <div class="hist">${e.orig?"sem histórico neste exercício":(ex.a&&ex.a.length?"última vez &nbsp; "+ex.a.join(" · "):"sem registro anterior")}</div>
+          <div class="hist">${ex.ant?"última vez ("+(ex.ant.planilha?"planilha":diasAtras(ex.ant.iso))+") &nbsp; "+ex.a.filter(Boolean).join(" · "):"sem registro anterior"}</div>
         ${i===0?'<div class="dica-ed" style="padding:0 0 8px">Toque numa série já marcada para corrigir</div>':""}
-          ${e.orig?"":spark(ex.h)}
+          ${spark(ex.h)}
         </div>
         ${parou?`<div class="parado">◦ mesma carga há ${parou} sessões</div>`:""}
         <div class="crono">
@@ -1517,7 +1523,7 @@ function desenha(){
             <span class="s">${s+1}</span>
             <input class="cx" id="c${i}_${s}" inputmode="text" autocomplete="off"
                    autocapitalize="off" spellcheck="false"
-                   placeholder="${e.orig?"":((ex.a&&ex.a[s])||"")}" value="${e.series[s]??""}">
+                   placeholder="${(ex.a&&ex.a[s])||""}" value="${e.series[s]??""}">
             <span class="d" id="d${i}_${s}"></span>
             <button class="marca" data-m="${i}_${s}">✓</button>
           </div>
@@ -1601,6 +1607,10 @@ function confirmar(i,s){
   if(prox && !prox.disabled && !prox.readOnly) prox.focus();
 }
 
+/* o que a sessão guarda de cada exercício; "não vou fazer" fica registrado como não realizado */
+function detalheSessao(){
+  return est.map(e=>({nome:e.nome, orig:e.orig, series: e.pulado? ["NRE"] : e.series.slice()}));
+}
 function soma(){
   let v=0,c=0;
   est.forEach(e=>{ if(e.simples) return;
@@ -1683,7 +1693,7 @@ $("fim").onclick=()=>{
     $("secCardio").scrollIntoView({behavior:"smooth",block:"center"}); return; }
   dia.treino={ficha:fichaAtual, kcal:kcalTreino()+kcalCardio(), series:c,
                cardio:cardio.fez? (cardio.texto||"sim") : null,
-               detalhe:est.map(e=>({nome:e.nome, orig:e.orig, series:e.series.slice()}))};
+               detalhe:detalheSessao()};
   if(typeof limpaSessao==="function"){ limpaSessao(); if(typeof pintaRetomar==="function") pintaRetomar(); }
 
   if(dia.peso==null && pesoHoje) dia.peso=pesoHoje;
@@ -1881,7 +1891,7 @@ $("salvarEd").onclick=()=>{
     FICHAS[l].ex = exs.map((e,i)=>{
       const velho = FICHAS[l].ex.find(x=>x.n===e.n);
       return velho || {n:e.n, a:["",""," "], h:[], alt:[],
-        simples:/abdominal/i.test(e.n)};
+        simples:/prancha|dead bug/i.test(e.n)};
     });
   });
   alert("Ficha atualizada"+(trocas?" · "+trocas+" exercício(s) novo(s), sem histórico ainda.":" · nenhuma troca."));
@@ -2246,11 +2256,12 @@ function tempoAtivo(){
 function recordes(){
   const r=[];
   est.forEach((e,i)=>{
-    if(e.simples||e.orig) return;
-    const ant=((FICHAS[fichaAtual].ex.find(x=>x.n===e.nome)||FICHAS[fichaAtual].ex[i]||{}).a)||[];
+    if(e.simples||e.pulado) return;
+    const ant=registroAnterior(e.nome, dataDoTreino()); if(!ant) return;
+    const m=movPorRep(e.nome);
     e.series.forEach((x,s)=>{
-      if(x==null||!ant[s]) return;
-      const a=vol1(ant[s]), b=vol1(x);
+      if(x==null||!serieComNumero(ant.series[s])) return;
+      const a=vol1(ant.series[s])*m, b=vol1(x)*m;
       if(a && b>a*1.02) r.push({n:e.nome, s:s+1, x, p:Math.round((b-a)/a*100)});
     });
   });
@@ -2345,7 +2356,7 @@ $("nfSalvar").onclick=()=>{
   Object.keys(FICHAS).forEach(k=>delete FICHAS[k]);
   Object.entries(nova.treinos).forEach(([L,t])=>{
     FICHAS[L]={grupo:t.grupos.join(" · ")||"sem grupo", ultimo:"nunca",
-      ex:t.ex.map(n=>({n, a:["","",""], h:[], alt:[], simples:/abdominal/i.test(n)}))};
+      ex:t.ex.map(n=>({n, a:["","",""], h:[], alt:[], simples:/prancha|dead bug/i.test(n)}))};
   });
   nova=null; desenhaFichas();
   const el=$("fichas"); el.innerHTML="";
@@ -2621,7 +2632,7 @@ async function restaurarEstado(){
   if(e.pesos && e.pesos.length){ PESOS.length=0; PESOS.push(...e.pesos); }
   if(e.perfil) Object.assign(PERFIL, e.perfil);
   if(e.cardio && e.cardio.length){ CARDIO_PADROES.length=0; CARDIO_PADROES.push(...e.cardio); }
-  if(e.catalogo && e.catalogo.length){ CATALOGO.length=0; CATALOGO.push(...e.catalogo); }
+  if(e.catalogo && e.catalogo.length){ e.catalogo.forEach(n=>{ if(!CATALOGO.includes(n)) CATALOGO.push(n); }); }
   carrega(dataSel);
   desenhaCards(); pintaHome(); pintaNutri();
 }
@@ -3078,7 +3089,7 @@ $("btUltimo").onclick=()=>{
   $("ultSub").textContent=u.iso.split("-").reverse().join("/")+" · "+
     kcalDeDia(u.iso,DIAS[u.iso]).toLocaleString("pt-BR")+" kcal · cardio: "+(u.t.cardio||"não");
   $("ultCorpo").innerHTML=(u.t.detalhe||[]).map(e=>{
-    const feitas=(e.series||[]).filter(x=>x!=null);
+    const feitas=(e.series||[]).filter(x=>x!=null).map(x=>/^NRE$/i.test(String(x).trim())? "não realizado" : x);
     return '<div class="sessao-ex"><div class="sn">'+e.nome+'</div>'+
       '<div class="sv">'+(feitas.length? feitas.join("  ·  ") : "não registrado")+'</div>'+
       (e.orig? '<div class="so">no lugar de '+e.orig+'</div>':'')+'</div>';
@@ -3490,11 +3501,15 @@ function abreEdicaoSessao(iso){
   const modelo=FICHAS[t.ficha];
   const det=t.detalhe||[];
   est = (det.length? det : (modelo? modelo.ex.map(e=>({nome:e.n,orig:null,series:[null,null,null]})):[]))
-    .map(e=>({nome:e.nome, orig:e.orig||null,
-              simples:/abdominal/i.test(e.nome) && (e.series||[]).some(x=>x!=null) &&
-                      (e.series||[]).every(x=>x==null || STATUS.has(String(x).trim().toUpperCase())),
-              series:(e.series||[null,null,null]).slice(),
-              t:(descanso[e.nome]||90)}));
+    .map(e=>{
+      const ser=(e.series||[null,null,null]).slice();
+      const soStatus=ser.some(x=>x!=null) && ser.every(x=>x==null || STATUS.has(String(x).trim().toUpperCase()));
+      const naoFeito=soStatus && ser.every(x=>x==null || /^NRE$/i.test(String(x).trim()));
+      const legado=/abdominal/i.test(e.nome) && !ehDual(e.nome) && soStatus;   // Realizado / Não realizado antigo
+      const pulado=naoFeito && !legado;
+      return {nome:e.nome, orig:e.orig||null, simples:legado, pulado,
+              series: pulado? [null,null,null] : ser, t:(descanso[e.nome]||90)};
+    });
   cardio={fez: !!t.cardio, texto: t.cardio||""};
   $("tituloTreino").textContent="Treino "+t.ficha;
   $("dataTreino").textContent=iso.split("-").reverse().join("/");
@@ -3530,7 +3545,7 @@ abrirTreino = function(L){ editandoSessao=null;
     const antes=JSON.parse(JSON.stringify(DIAS[iso].treino));
     DIAS[iso].treino={ficha:fichaAtual, kcal:kcalTreino()+kcalCardio(), series:c,
       cardio: cardio.fez? (cardio.texto||"sim") : null,
-      detalhe: est.map(e=>({nome:e.nome, orig:e.orig, series:e.series.slice()}))};
+      detalhe: detalheSessao()};
     salvar();
     const dif=DIAS[iso].treino.kcal-(antes.kcal||0);
     editandoSessao=null; $("avisoEdicao").classList.add("oculto");
@@ -4543,7 +4558,7 @@ function gravaSessao(){
   if(editandoSessao) return;                       // edição de sessão antiga não entra aqui
   const feitas = est.reduce((a,e)=>a+(e.series||[]).filter(x=>x!=null).length,0);
   const dados={ficha:fichaAtual, data:dataSel, inicio:inicioTreino,
-    est:est.map(e=>({nome:e.nome,orig:e.orig,simples:e.simples,series:(e.series||[]).slice(),t:e.t})),
+    est:est.map(e=>({nome:e.nome,orig:e.orig,simples:e.simples,pulado:!!e.pulado,series:(e.series||[]).slice(),t:e.t})),
     cardio:{...cardio}, feitas, quando:Date.now()};
   try{ localStorage.setItem("ficha:emAndamento", JSON.stringify(dados)); }catch(e){}
 }
@@ -4886,11 +4901,11 @@ function todasSessoes(){
     .sort((a,b)=>a[0]<b[0]?-1:1);
 }
 function historicoEx(nome){
-  const out=[];
+  const out=[], alvo=canon(nome);
   todasSessoes().forEach(([iso,d])=>{
     (d.treino.detalhe||[]).forEach(e=>{
-      if(e.nome!==nome) return;
-      const feitas=(e.series||[]).filter(x=>x!=null);
+      if(canon(e.nome)!==alvo) return;
+      const feitas=(e.series||[]).filter(serieComNumero);
       if(!feitas.length) return;
       const ultima=analisaSerie(feitas[feitas.length-1]);
       const melhor=feitas.map(analisaSerie).filter(Boolean)
@@ -4902,8 +4917,8 @@ function historicoEx(nome){
 }
 function nomesExercicios(){
   const s=new Set();
-  Object.values(FICHAS).forEach(f=>f.ex.forEach(e=>s.add(e.n)));
-  todasSessoes().forEach(([,d])=>(d.treino.detalhe||[]).forEach(e=>s.add(e.nome)));
+  Object.values(FICHAS).forEach(f=>f.ex.forEach(e=>s.add(canon(e.n))));
+  todasSessoes().forEach(([,d])=>(d.treino.detalhe||[]).forEach(e=>{ if((e.series||[]).some(serieComNumero)) s.add(canon(e.nome)); }));
   return [...s].sort((a,b)=>a.localeCompare(b,"pt-BR"));
 }
 function pintaExercicios(){
@@ -6102,7 +6117,7 @@ $("efSalvar").onclick=()=>{
       if(v) return v;                                   // mantém carga, histórico e alternativas
       const hist=historicoEx(e.n), u=hist[hist.length-1];
       return {n:e.n, a:u? u.series.slice(0,3) : ["","",""], h:hist.map(x=>x.ultima.carga),
-              alt:[], simples:/abdominal/i.test(e.n)};
+              alt:[], simples:/prancha|dead bug/i.test(e.n)};
     });
   });
   salvar(); efRasc=null;
@@ -6125,7 +6140,7 @@ const estadoEF = estadoAtual;
 estadoAtual = function(){ return {...estadoEF(), fichas:FICHAS}; };
 
 /* ================= catálogo de exercícios da academia ================= */
-const EXS_GRUPO = {"Peito": ["Supino Reto com Barra", "Supino Reto com Halteres", "Supino Reto na Máquina", "Supino Inclinado com Barra", "Supino Inclinado com Halteres", "Supino Inclinado na Máquina", "Supino Declinado com Barra", "Supino Declinado com Halteres", "Supino no Smith", "Supino Inclinado no Smith", "Crucifixo Reto com Halteres", "Crucifixo Inclinado com Halteres", "Crucifixo na Máquina (Peck Deck)", "Cross Over Polia Alta", "Cross Over Polia Média", "Cross Over Polia Baixa", "Flexão de Braço", "Flexão de Braço Inclinada", "Paralelas (Mergulho)", "Pullover com Halter", "Chest Press Articulado"], "Costas": ["Puxada Aberta na Frente", "Puxada Fechada (Triângulo)", "Puxada Neutra", "Puxada Supinada", "Pulldown com Corda", "Pulldown Braço Estendido", "Barra Fixa", "Barra Fixa Assistida", "Remada Curvada com Barra", "Remada Curvada Supinada", "Remada Unilateral com Halter (Serrote)", "Remada Baixa Triângulo", "Remada Baixa Aberta", "Remada Cavalinho (T-Bar)", "Remada na Máquina Articulada", "Remada Alta com Barra", "Remada Invertida", "Levantamento Terra", "Levantamento Terra Romeno", "Hiperextensão Lombar (Banco Romano)", "Good Morning", "Encolhimento com Barra", "Encolhimento com Halteres"], "Ombros": ["Desenvolvimento com Barra", "Desenvolvimento com Halteres", "Desenvolvimento na Máquina", "Desenvolvimento no Smith", "Desenvolvimento Arnold", "Elevação Lateral com Halteres", "Elevação Lateral na Polia", "Elevação Lateral na Máquina", "Elevação Frontal com Halteres", "Elevação Frontal com Barra", "Elevação Frontal na Polia", "Crucifixo Inverso Máquina", "Crucifixo Inverso com Halteres", "Crucifixo Invertido na Polia", "Face Pull", "Remada Alta na Polia"], "Bíceps": ["Rosca Direta com Barra", "Rosca Direta com Barra W", "Rosca Direta com Halteres", "Rosca Alternada com Halteres", "Rosca Martelo com Halteres", "Rosca Martelo na Polia (Corda)", "Rosca Martelo Barra H", "Rosca Scott (Máquina)", "Banco Scott com Barra W", "Rosca Scott com Halter", "Rosca Concentrada", "Rosca Bayesian na Polia", "Rosca na Polia Baixa", "Rosca Inclinada com Halteres", "Rosca Inversa com Barra", "Rosca 21", "Rosca Spider"], "Tríceps": ["Tríceps Pulley Barra Reta", "Tríceps Pulley Barra V", "Tríceps Corda", "Tríceps Triângulo na Polia", "Tríceps Testa com Barra W", "Tríceps Testa com Halteres", "Tríceps Francês com Halter", "Tríceps Francês na Polia", "Tríceps Francês Unilateral no Crossover", "Tríceps Coice (Kickback)", "Tríceps Banco (Mergulho no Banco)", "Tríceps na Máquina", "Supino Fechado", "Tríceps Unilateral Pegada Invertida"], "Antebraço": ["Rosca Punho", "Extensão de Punho", "Rosca Punho + Extensão de Punho", "Farmer's Walk (Caminhada do Fazendeiro)"], "Quadríceps": ["Agachamento Livre com Barra", "Agachamento no Smith", "Agachamento no Squat (Hack)", "Agachamento Frontal", "Agachamento Goblet", "Agachamento Sumô", "Leg Press 45°", "Leg Press Horizontal", "Cadeira Extensora", "Afundo com Halteres", "Passada (Avanço)", "Búlgaro", "Step Up no Banco", "Sissy Squat", "Agachamento na Máquina Pêndulo"], "Posterior": ["Cadeira Flexora", "Mesa Flexora", "Flexora em Pé Unilateral", "Stiff com Barra", "Stiff com Halteres", "Flexão Nórdica", "Levantamento Terra Romeno com Halteres"], "Glúteos": ["Elevação Pélvica (Hip Thrust)", "Elevação Pélvica na Máquina", "Glúteo na Polia (Coice)", "Glúteo na Máquina", "Cadeira Abdutora", "Cadeira Adutora", "Abdução na Polia", "Ponte de Glúteo"], "Panturrilha": ["Panturrilha em Pé na Máquina", "Panturrilha em Pé no Squat", "Panturrilha Sentado", "Panturrilha no Leg Press", "Panturrilha no Smith", "Panturrilha Unilateral com Halter"], "Abdômen": ["Abdominal Supra", "Abdominal Infra", "Abdominal Supra e Infra", "Abdominal na Máquina", "Abdominal na Polia (Crunch)", "Abdominal Oblíquo", "Prancha", "Prancha Lateral", "Elevação de Pernas na Barra", "Elevação de Pernas no Banco", "Abdominal Bicicleta", "Roda Abdominal", "Russian Twist", "Abdominal Canivete"]};
+const EXS_GRUPO = {"Peito": ["Supino Reto com Barra", "Supino Reto com Halteres", "Supino Reto na Máquina", "Supino Inclinado com Barra", "Supino Inclinado com Halteres", "Supino Inclinado na Máquina", "Supino Declinado com Barra", "Supino Declinado com Halteres", "Supino no Smith", "Supino Inclinado no Smith", "Crucifixo Reto com Halteres", "Crucifixo Inclinado com Halteres", "Crucifixo na Máquina (Peck Deck)", "Cross Over Polia Alta", "Cross Over Polia Média", "Cross Over Polia Baixa", "Flexão de Braço", "Flexão de Braço Inclinada", "Paralelas (Mergulho)", "Pullover com Halter", "Chest Press Articulado"], "Costas": ["Puxada Aberta na Frente", "Puxada Fechada (Triângulo)", "Puxada Neutra", "Puxada Supinada", "Pulldown com Corda", "Pulldown Braço Estendido", "Barra Fixa", "Barra Fixa Assistida", "Remada Curvada com Barra", "Remada Curvada Supinada", "Remada Unilateral com Halter (Serrote)", "Remada Baixa Triângulo", "Remada Baixa Aberta", "Remada Cavalinho (T-Bar)", "Remada na Máquina Articulada", "Remada Alta com Barra", "Remada Invertida", "Levantamento Terra", "Levantamento Terra Romeno", "Hiperextensão Lombar (Banco Romano)", "Good Morning", "Encolhimento com Barra", "Encolhimento com Halteres"], "Ombros": ["Desenvolvimento com Barra", "Desenvolvimento com Halteres", "Desenvolvimento na Máquina", "Desenvolvimento no Smith", "Desenvolvimento Arnold", "Elevação Lateral com Halteres", "Elevação Lateral na Polia", "Elevação Lateral na Máquina", "Elevação Frontal com Halteres", "Elevação Frontal com Barra", "Elevação Frontal na Polia", "Crucifixo Inverso Máquina", "Crucifixo Inverso com Halteres", "Crucifixo Invertido na Polia", "Face Pull", "Remada Alta na Polia"], "Bíceps": ["Rosca Direta com Barra", "Rosca Direta com Barra W", "Rosca Direta com Halteres", "Rosca Alternada com Halteres", "Rosca Martelo com Halteres", "Rosca Martelo na Polia", "Rosca Martelo Barra H", "Rosca Scott (Máquina)", "Banco Scott com Barra W", "Rosca Scott com Halter", "Rosca Concentrada", "Rosca Bayesian na Polia", "Rosca na Polia Baixa", "Rosca Inclinada com Halteres", "Rosca Inversa com Barra", "Rosca 21", "Rosca Spider"], "Tríceps": ["Tríceps Pulley Barra Reta", "Tríceps Pulley Barra V", "Tríceps Corda", "Tríceps Triângulo na Polia", "Tríceps Testa com Barra W", "Tríceps Testa com Halteres", "Tríceps Francês com Halter", "Tríceps Francês na Polia", "Tríceps Francês Unilateral no Crossover", "Tríceps Coice (Kickback)", "Tríceps Banco (Mergulho no Banco)", "Tríceps na Máquina", "Supino Fechado", "Tríceps Unilateral Pegada Invertida"], "Antebraço": ["Rosca Punho", "Extensão de Punho", "Rosca Punho + Extensão de Punho", "Farmer's Walk (Caminhada do Fazendeiro)"], "Quadríceps": ["Agachamento Livre com Barra", "Agachamento no Smith", "Agachamento no Squat (Hack)", "Agachamento Frontal", "Agachamento Goblet", "Agachamento Sumô", "Leg Press 45°", "Leg Press Horizontal", "Cadeira Extensora", "Afundo com Halteres", "Passada (Avanço)", "Búlgaro", "Step Up no Banco", "Sissy Squat", "Agachamento na Máquina Pêndulo"], "Posterior": ["Cadeira Flexora", "Mesa Flexora", "Flexora em Pé Unilateral", "Stiff com Barra", "Stiff com Halteres", "Flexão Nórdica", "Levantamento Terra Romeno com Halteres"], "Glúteos": ["Elevação Pélvica (Hip Thrust)", "Elevação Pélvica na Máquina", "Glúteo na Polia (Coice)", "Glúteo na Máquina", "Cadeira Abdutora", "Cadeira Adutora", "Abdução na Polia", "Ponte de Glúteo"], "Panturrilha": ["Panturrilha em Pé na Máquina", "Panturrilha em Pé no Squat", "Panturrilha Sentado", "Panturrilha no Leg Press", "Panturrilha no Smith", "Panturrilha Unilateral com Halter"], "Abdômen": ["Abdominal Supra", "Abdominal Infra", "Abdominal Supra e Infra", "Abdominal na Máquina", "Abdominal na Polia (Crunch)", "Abdominal Oblíquo", "Prancha", "Prancha Lateral", "Elevação de Pernas na Barra", "Elevação de Pernas no Banco", "Abdominal Bicicleta", "Roda Abdominal", "Russian Twist", "Abdominal Canivete"]};
 function grupoDoExercicio(nome){
   const n=String(nome).toLowerCase();
   for(const [g,l] of Object.entries(EXS_GRUPO)) if(l.some(x=>x.toLowerCase()===n)) return g;
@@ -6206,7 +6221,7 @@ abre = function(i){
 };
 
 /* ================= catálogo com metadados ================= */
-const EXS_META = [["Supino Reto com Barra","Peito","C","L","supino-reto"],["Supino Reto com Halteres","Peito","C","L","supino-reto"],["Supino Reto na Máquina","Peito","C","M","supino-reto"],["Supino Reto no Smith","Peito","C","M","supino-reto"],["Supino Reto Pegada Fechada","Peito","C","L","supino-reto"],["Supino Inclinado com Barra","Peito","C","L","supino-incl"],["Supino Inclinado com Halteres","Peito","C","L","supino-incl"],["Supino Inclinado na Máquina","Peito","C","M","supino-incl"],["Supino Inclinado no Smith","Peito","C","M","supino-incl"],["Supino Declinado com Barra","Peito","C","L","supino-decl"],["Supino Declinado com Halteres","Peito","C","L","supino-decl"],["Supino Declinado na Máquina","Peito","C","M","supino-decl"],["Chest Press Articulado","Peito","C","M","supino-reto"],["Supino Unilateral na Máquina","Peito","C","M","supino-reto"],["Flexão de Braço","Peito","C","L","flexao"],["Flexão de Braço Inclinada","Peito","C","L","flexao"],["Flexão de Braço Declinada","Peito","C","L","flexao"],["Paralelas (Mergulho) para Peito","Peito","C","L","paralela"],["Crucifixo Reto com Halteres","Peito","I","L","crucifixo"],["Crucifixo Inclinado com Halteres","Peito","I","L","crucifixo"],["Crucifixo Declinado com Halteres","Peito","I","L","crucifixo"],["Crucifixo na Máquina (Peck Deck)","Peito","I","M","crucifixo"],["Cross Over Polia Alta","Peito","I","P","cross"],["Cross Over Polia Média","Peito","I","P","cross"],["Cross Over Polia Baixa","Peito","I","P","cross"],["Cross Over Unilateral","Peito","I","P","cross"],["Pullover com Halter","Peito","I","L","pullover"],["Pullover na Polia","Costas","I","P","pullover"],["Puxada Aberta na Frente","Costas","C","P","puxada"],["Puxada Aberta Atrás da Nuca","Costas","C","P","puxada"],["Puxada Fechada (Triângulo)","Costas","C","P","puxada"],["Puxada Neutra","Costas","C","P","puxada"],["Puxada Supinada","Costas","C","P","puxada"],["Puxada Unilateral na Polia","Costas","C","P","puxada"],["Puxada na Máquina Articulada","Costas","C","M","puxada"],["Pulldown com Corda","Costas","I","P","pulldown"],["Pulldown com Barra Reta","Costas","I","P","pulldown"],["Barra Fixa Pronada","Costas","C","L","barra-fixa"],["Barra Fixa Supinada","Costas","C","L","barra-fixa"],["Barra Fixa Neutra","Costas","C","L","barra-fixa"],["Barra Fixa Assistida (Graviton)","Costas","C","M","barra-fixa"],["Remada Curvada com Barra Pronada","Costas","C","L","remada-curv"],["Remada Curvada com Barra Supinada","Costas","C","L","remada-curv"],["Remada Curvada com Halteres","Costas","C","L","remada-curv"],["Remada Curvada no Smith","Costas","C","M","remada-curv"],["Remada Unilateral com Halter (Serrote)","Costas","C","L","remada-uni"],["Remada Unilateral na Polia","Costas","C","P","remada-uni"],["Remada Unilateral na Máquina","Costas","C","M","remada-uni"],["Remada Baixa Triângulo","Costas","C","P","remada-baixa"],["Remada Baixa Pegada Aberta","Costas","C","P","remada-baixa"],["Remada Baixa com Corda","Costas","C","P","remada-baixa"],["Remada Cavalinho (T-Bar)","Costas","C","L","remada-t"],["Remada Cavalinho na Máquina","Costas","C","M","remada-t"],["Remada na Máquina Articulada","Costas","C","M","remada-maq"],["Remada Sentada na Máquina","Costas","C","M","remada-maq"],["Remada Invertida na Barra","Costas","C","L","remada-inv"],["Remada Pendlay","Costas","C","L","remada-curv"],["Levantamento Terra","Costas","C","L","terra"],["Levantamento Terra Sumô","Costas","C","L","terra"],["Levantamento Terra com Barra Hexagonal","Costas","C","L","terra"],["Rack Pull","Costas","C","L","terra"],["Hiperextensão Lombar (Banco Romano)","Costas","I","L","lombar"],["Hiperextensão Lombar na Máquina","Costas","I","M","lombar"],["Good Morning","Costas","C","L","lombar"],["Encolhimento com Barra","Costas","I","L","encolhimento"],["Encolhimento com Halteres","Costas","I","L","encolhimento"],["Encolhimento na Máquina","Costas","I","M","encolhimento"],["Encolhimento no Smith","Costas","I","M","encolhimento"],["Desenvolvimento com Barra pela Frente","Ombros","C","L","desenvolvimento"],["Desenvolvimento com Barra por Trás","Ombros","C","L","desenvolvimento"],["Desenvolvimento com Halteres Sentado","Ombros","C","L","desenvolvimento"],["Desenvolvimento com Halteres em Pé","Ombros","C","L","desenvolvimento"],["Desenvolvimento na Máquina","Ombros","C","M","desenvolvimento"],["Desenvolvimento no Smith","Ombros","C","M","desenvolvimento"],["Desenvolvimento Arnold","Ombros","C","L","desenvolvimento"],["Desenvolvimento Unilateral com Halter","Ombros","C","L","desenvolvimento"],["Landmine Press","Ombros","C","L","desenvolvimento"],["Elevação Lateral com Halteres","Ombros","I","L","elev-lateral"],["Elevação Lateral Sentado","Ombros","I","L","elev-lateral"],["Elevação Lateral Unilateral com Halter","Ombros","I","L","elev-lateral"],["Elevação Lateral na Polia","Ombros","I","P","elev-lateral"],["Elevação Lateral Unilateral na Polia","Ombros","I","P","elev-lateral"],["Elevação Lateral na Máquina","Ombros","I","M","elev-lateral"],["Elevação Lateral Inclinada no Banco","Ombros","I","L","elev-lateral"],["Elevação Frontal com Halteres","Ombros","I","L","elev-frontal"],["Elevação Frontal Alternada","Ombros","I","L","elev-frontal"],["Elevação Frontal e Lateral Alternada","Ombros","I","L","elev-combinada"],["Elevação Frontal com Barra","Ombros","I","L","elev-frontal"],["Elevação Frontal com Anilha","Ombros","I","L","elev-frontal"],["Elevação Frontal na Polia","Ombros","I","P","elev-frontal"],["Elevação Frontal com Corda","Ombros","I","P","elev-frontal"],["Crucifixo Inverso Máquina","Ombros","I","M","post-ombro"],["Crucifixo Inverso com Halteres","Ombros","I","L","post-ombro"],["Crucifixo Inverso no Banco Inclinado","Ombros","I","L","post-ombro"],["Crucifixo Invertido na Polia","Ombros","I","P","post-ombro"],["Face Pull","Ombros","I","P","post-ombro"],["Remada Alta com Barra","Ombros","C","L","remada-alta"],["Remada Alta com Halteres","Ombros","C","L","remada-alta"],["Remada Alta na Polia","Ombros","C","P","remada-alta"],["Rosca Direta com Barra Reta","Bíceps","I","L","rosca-direta"],["Rosca Direta com Barra W","Bíceps","I","L","rosca-direta"],["Rosca Direta com Halteres","Bíceps","I","L","rosca-direta"],["Rosca Direta na Polia","Bíceps","I","P","rosca-direta"],["Rosca Direta Unilateral na Polia","Bíceps","I","P","rosca-direta"],["Rosca Direta na Máquina","Bíceps","I","M","rosca-direta"],["Rosca Alternada com Halteres","Bíceps","I","L","rosca-direta"],["Rosca Alternada Sentado","Bíceps","I","L","rosca-direta"],["Rosca Martelo com Halteres","Bíceps","I","L","rosca-martelo"],["Rosca Martelo Alternada","Bíceps","I","L","rosca-martelo"],["Rosca Martelo na Polia (Corda)","Bíceps","I","P","rosca-martelo"],["Rosca Martelo Barra H","Bíceps","I","L","rosca-martelo"],["Rosca Martelo Cruzada","Bíceps","I","L","rosca-martelo"],["Rosca Scott (Máquina)","Bíceps","I","M","rosca-scott"],["Banco Scott com Barra W","Bíceps","I","L","rosca-scott"],["Banco Scott com Barra Reta","Bíceps","I","L","rosca-scott"],["Rosca Scott Unilateral com Halter","Bíceps","I","L","rosca-scott"],["Rosca Scott na Polia","Bíceps","I","P","rosca-scott"],["Rosca Concentrada","Bíceps","I","L","rosca-conc"],["Rosca Bayesian na Polia","Bíceps","I","P","rosca-bayes"],["Rosca Inclinada com Halteres","Bíceps","I","L","rosca-incl"],["Rosca Spider","Bíceps","I","L","rosca-spider"],["Rosca 21","Bíceps","I","L","rosca-direta"],["Rosca Inversa com Barra","Antebraço","I","L","rosca-inversa"],["Rosca Inversa com Barra W","Antebraço","I","L","rosca-inversa"],["Rosca Inversa na Polia","Antebraço","I","P","rosca-inversa"],["Tríceps Pulley Barra Reta","Tríceps","I","P","triceps-pulley"],["Tríceps Pulley Barra V","Tríceps","I","P","triceps-pulley"],["Tríceps Triângulo na Polia","Tríceps","I","P","triceps-pulley"],["Tríceps Corda","Tríceps","I","P","triceps-pulley"],["Tríceps Pulley Pegada Invertida","Tríceps","I","P","triceps-pulley"],["Tríceps Unilateral na Polia","Tríceps","I","P","triceps-pulley"],["Tríceps Testa com Barra W","Tríceps","I","L","triceps-testa"],["Tríceps Testa com Barra Reta","Tríceps","I","L","triceps-testa"],["Tríceps Testa com Halteres","Tríceps","I","L","triceps-testa"],["Tríceps Testa na Polia","Tríceps","I","P","triceps-testa"],["Tríceps Francês com Halter","Tríceps","I","L","triceps-frances"],["Tríceps Francês com Barra W","Tríceps","I","L","triceps-frances"],["Tríceps Francês na Polia","Tríceps","I","P","triceps-frances"],["Tríceps Francês Unilateral no Crossover","Tríceps","I","P","triceps-frances"],["Tríceps Coice com Halter (Kickback)","Tríceps","I","L","triceps-coice"],["Tríceps Coice na Polia","Tríceps","I","P","triceps-coice"],["Tríceps Banco (Mergulho no Banco)","Tríceps","C","L","paralela-t"],["Paralelas (Mergulho) para Tríceps","Tríceps","C","L","paralela-t"],["Tríceps na Máquina","Tríceps","I","M","triceps-maq"],["Supino Fechado para Tríceps","Tríceps","C","L","supino-fechado"],["Rosca Punho","Antebraço","I","L","punho"],["Extensão de Punho","Antebraço","I","L","punho"],["Rosca Punho + Extensão de Punho","Antebraço","I","L","punho"],["Rosca Punho na Polia","Antebraço","I","P","punho"],["Farmer's Walk (Caminhada do Fazendeiro)","Antebraço","C","L","farmer"],["Suspensão na Barra (Dead Hang)","Antebraço","I","L","farmer"],["Agachamento Livre com Barra","Quadríceps","C","L","agachamento"],["Agachamento no Smith","Quadríceps","C","M","agachamento"],["Agachamento Hack Invertido","Quadríceps","C","M","agachamento"],["Agachamento na Máquina Pêndulo","Quadríceps","C","M","agachamento"],["Agachamento Sumô com Halter","Quadríceps","C","L","agachamento-sumo"],["Agachamento Sumô com Barra","Quadríceps","C","L","agachamento-sumo"],["Agachamento Búlgaro com Halteres","Quadríceps","C","L","bulgaro"],["Agachamento Búlgaro no Smith","Quadríceps","C","M","bulgaro"],["Leg Press 45°","Quadríceps","C","M","leg-press"],["Leg Press Horizontal","Quadríceps","C","M","leg-press"],["Cadeira Extensora","Quadríceps","I","M","extensora"],["Cadeira Extensora Unilateral","Quadríceps","I","M","extensora"],["Afundo com Halteres","Quadríceps","C","L","afundo"],["Afundo com Barra","Quadríceps","C","L","afundo"],["Afundo no Smith","Quadríceps","C","M","afundo"],["Step Up no Banco","Quadríceps","C","L","step-up"],["Sissy Squat","Quadríceps","I","L","sissy"],["Cadeira Flexora","Posterior","I","M","flexora-sentada"],["Cadeira Flexora Unilateral","Posterior","I","M","flexora-sentada"],["Mesa Flexora","Posterior","I","M","flexora-deitada"],["Flexora em Pé Unilateral","Posterior","I","M","flexora-pe"],["Stiff com Barra","Posterior","C","L","stiff"],["Stiff com Halteres","Posterior","C","L","stiff"],["Stiff no Smith","Posterior","C","M","stiff"],["Stiff Unilateral com Halter","Posterior","C","L","stiff"],["Flexão Nórdica","Posterior","I","L","nordica"],["Elevação Pélvica com Barra (Hip Thrust)","Glúteos","C","L","hip-thrust"],["Elevação Pélvica na Máquina","Glúteos","C","M","hip-thrust"],["Elevação Pélvica no Smith","Glúteos","C","M","hip-thrust"],["Elevação Pélvica Unilateral","Glúteos","C","L","hip-thrust"],["Ponte de Glúteo","Glúteos","I","L","ponte"],["Cadeira Abdutora","Glúteos","I","M","abdutora"],["Abdução em Pé com Caneleira","Glúteos","I","L","abdutora"],["Cadeira Adutora","Glúteos","I","M","adutora"],["Panturrilha em Pé na Máquina","Panturrilha","I","M","pant-pe"],["Panturrilha em Pé no Squat","Panturrilha","I","M","pant-pe"],["Panturrilha em Pé no Smith","Panturrilha","I","M","pant-pe"],["Panturrilha em Pé Unilateral com Halter","Panturrilha","I","L","pant-pe"],["Panturrilha em Pé no Degrau","Panturrilha","I","L","pant-pe"],["Panturrilha no Leg Press","Panturrilha","I","M","pant-leg"],["Panturrilha Burrinho","Panturrilha","I","M","pant-pe"],["Abdominal Supra","Abdômen","I","L","abd-supra"],["Abdominal Infra","Abdômen","I","L","abd-infra"],["Abdominal Supra e Infra","Abdômen","I","L","abd-supra"],["Abdominal na Máquina","Abdômen","I","M","abd-supra"],["Abdominal na Polia (Crunch)","Abdômen","I","P","abd-supra"],["Abdominal Declinado","Abdômen","I","L","abd-supra"],["Abdominal Oblíquo","Abdômen","I","L","abd-obl"],["Abdominal Bicicleta","Abdômen","I","L","abd-obl"],["Russian Twist","Abdômen","I","L","abd-obl"],["Rotação na Polia (Woodchopper)","Abdômen","I","P","abd-obl"],["Prancha","Abdômen","I","L","prancha"],["Prancha Lateral","Abdômen","I","L","prancha"],["Elevação de Pernas na Barra","Abdômen","I","L","abd-infra"],["Elevação de Pernas no Banco","Abdômen","I","L","abd-infra"],["Elevação de Joelhos na Paralela","Abdômen","I","L","abd-infra"],["Abdominal Canivete","Abdômen","I","L","abd-infra"],["Roda Abdominal","Abdômen","I","L","prancha"],["Dead Bug","Abdômen","I","L","prancha"],["Agachamento Frontal com Barra","Quadríceps","C","L","agachamento"],["Agachamento Frontal no Smith","Quadríceps","C","M","agachamento"],["Agachamento no Hack","Quadríceps","C","M","agachamento"],["Agachamento Belt Squat","Quadríceps","C","M","agachamento"],["Agachamento Goblet com Halter","Quadríceps","C","L","agachamento"],["Agachamento Goblet com Kettlebell","Quadríceps","C","L","agachamento"],["Agachamento Zercher","Quadríceps","C","L","agachamento"],["Agachamento com Halteres","Quadríceps","C","L","agachamento"],["Agachamento no Banco (Box Squat)","Quadríceps","C","L","agachamento"],["Agachamento Pistol (Unilateral)","Quadríceps","C","L","agachamento"],["Agachamento Cossaco","Quadríceps","C","L","agachamento"],["Agachamento na Polia","Quadríceps","C","P","agachamento"],["Agachamento Sumô com Kettlebell","Glúteos","C","L","agachamento-sumo"],["Agachamento Sumô no Smith","Glúteos","C","M","agachamento-sumo"],["Leg Press 45° Unilateral","Quadríceps","C","M","leg-press"],["Leg Press Horizontal Unilateral","Quadríceps","C","M","leg-press"],["Leg Press Vertical","Quadríceps","C","M","leg-press"],["Leg Press Pés Baixos (ênfase quadríceps)","Quadríceps","C","M","leg-press"],["Leg Press Pés Altos (ênfase glúteo)","Glúteos","C","M","leg-press"],["Leg Press Pés Afastados","Glúteos","C","M","leg-press"],["Cadeira Extensora com Pausa no Topo","Quadríceps","I","M","extensora"],["Extensão de Joelho com Caneleira","Quadríceps","I","L","extensora"],["Extensão de Joelho na Polia","Quadríceps","I","P","extensora"],["Afundo na Polia","Quadríceps","C","P","afundo"],["Afundo com Kettlebell","Quadríceps","C","L","afundo"],["Passada com Halteres","Quadríceps","C","L","passada"],["Passada com Barra","Quadríceps","C","L","passada"],["Passada no Smith","Quadríceps","C","M","passada"],["Passada Reversa com Halteres","Quadríceps","C","L","passada"],["Passada Reversa com Barra","Quadríceps","C","L","passada"],["Passada Reversa no Smith","Quadríceps","C","M","passada"],["Passada Lateral com Halteres","Quadríceps","C","L","passada"],["Passada Cruzada (Curtsy Lunge)","Quadríceps","C","L","passada"],["Agachamento Búlgaro com Barra","Quadríceps","C","L","bulgaro"],["Agachamento Búlgaro na Polia","Quadríceps","C","P","bulgaro"],["Agachamento Búlgaro com Kettlebell","Quadríceps","C","L","bulgaro"],["Step Up com Halteres","Glúteos","C","L","step-up"],["Step Up com Barra","Glúteos","C","L","step-up"],["Step Up no Smith","Glúteos","C","M","step-up"],["Step Up Lateral","Glúteos","C","L","step-up"],["Sissy Squat Livre","Quadríceps","I","L","sissy"],["Sissy Squat na Máquina","Quadríceps","I","M","sissy"],["Cadeira Flexora com Pausa","Posterior","I","M","flexora-sentada"],["Mesa Flexora Unilateral","Posterior","I","M","flexora-deitada"],["Flexora em Pé na Máquina","Posterior","I","M","flexora-pe"],["Flexora em Pé na Polia","Posterior","I","P","flexora-pe"],["Flexora em Pé com Caneleira","Posterior","I","L","flexora-pe"],["Flexão de Pernas na Bola Suíça","Posterior","I","L","flexora-bola"],["Stiff com Kettlebell","Posterior","C","L","stiff"],["Stiff Unilateral na Polia","Posterior","C","P","stiff"],["Stiff na Polia","Posterior","C","P","stiff"],["Levantamento Terra Romeno com Barra","Posterior","C","L","terra-romeno"],["Levantamento Terra Romeno com Halteres","Posterior","C","L","terra-romeno"],["Levantamento Terra Romeno Unilateral","Posterior","C","L","terra-romeno"],["Levantamento Terra Romeno no Smith","Posterior","C","M","terra-romeno"],["Good Morning com Barra","Posterior","C","L","good-morning"],["Good Morning no Smith","Posterior","C","M","good-morning"],["Flexão Nórdica Assistida com Elástico","Posterior","I","L","nordica"],["Flexão Nórdica na Máquina","Posterior","I","M","nordica"],["Glute Ham Raise (GHR)","Posterior","I","M","nordica"],["Elevação Pélvica com Halter","Glúteos","C","L","hip-thrust"],["Elevação Pélvica Unilateral na Máquina","Glúteos","C","M","hip-thrust"],["Elevação Pélvica com Elástico","Glúteos","C","L","hip-thrust"],["Ponte de Glúteo Unilateral","Glúteos","I","L","ponte"],["Ponte de Glúteo com Anilha","Glúteos","I","L","ponte"],["Ponte de Glúteo com Barra","Glúteos","I","L","ponte"],["Coice na Polia (Glúteo)","Glúteos","I","P","coice"],["Coice na Polia Unilateral com Tornozeleira","Glúteos","I","P","coice"],["Coice na Máquina (Glute Kickback)","Glúteos","I","M","coice"],["Coice no Smith","Glúteos","I","M","coice"],["Coice com Caneleira em 4 Apoios","Glúteos","I","L","coice"],["Coice com Elástico","Glúteos","I","L","coice"],["Glúteo na Máquina Multiglúteo","Glúteos","I","M","coice"],["Cadeira Abdutora Inclinada à Frente","Glúteos","I","M","abdutora"],["Cadeira Abdutora Unilateral","Glúteos","I","M","abdutora"],["Abdução de Quadril na Polia","Glúteos","I","P","abdutora"],["Abdução Deitado com Caneleira","Glúteos","I","L","abdutora"],["Abdução com Elástico (Mini Band)","Glúteos","I","L","abdutora"],["Caminhada Lateral com Elástico","Glúteos","I","L","abdutora"],["Adução de Quadril na Polia","Glúteos","I","P","adutora"],["Adução Deitado com Caneleira","Glúteos","I","L","adutora"],["Pull Through na Polia","Glúteos","I","P","extensao-quadril"],["Hiperextensão para Glúteo","Glúteos","I","L","extensao-quadril"],["Hiperextensão para Glúteo na Máquina","Glúteos","I","M","extensao-quadril"],["Panturrilha em Pé no Hack","Panturrilha","I","M","pant-pe"],["Panturrilha em Pé com Halter","Panturrilha","I","L","pant-pe"],["Panturrilha Sentado na Máquina (Sóleo)","Panturrilha","I","M","pant-sent"],["Panturrilha Sentado com Halter","Panturrilha","I","L","pant-sent"],["Panturrilha Sentado Unilateral","Panturrilha","I","M","pant-sent"],["Panturrilha no Leg Press Unilateral","Panturrilha","I","M","pant-leg"],["Elevação de Tibial (Tibial Anterior)","Panturrilha","I","L","tibial"],["Supino Reto Unilateral com Halter","Peito","C","L","supino-reto"],["Supino Reto na Polia","Peito","C","P","supino-reto"],["Supino Reto com Kettlebell","Peito","C","L","supino-reto"],["Supino Inclinado Unilateral com Halter","Peito","C","L","supino-incl"],["Supino Inclinado na Polia","Peito","C","P","supino-incl"],["Supino Inclinado Unilateral na Máquina","Peito","C","M","supino-incl"],["Crucifixo Unilateral na Máquina","Peito","I","M","crucifixo"],["Crucifixo na Polia Deitado","Peito","I","P","crucifixo"],["Puxada Aberta Unilateral na Máquina","Costas","C","M","puxada"],["Puxada com Pegada Supinada na Máquina","Costas","C","M","puxada"],["Remada Baixa Unilateral na Polia","Costas","C","P","remada-baixa"],["Remada Baixa Pegada Supinada","Costas","C","P","remada-baixa"],["Remada Unilateral na Máquina Articulada","Costas","C","M","remada-maq"],["Remada no Smith Unilateral","Costas","C","M","remada-maq"],["Desenvolvimento Unilateral na Máquina","Ombros","C","M","desenvolvimento"],["Desenvolvimento na Polia","Ombros","C","P","desenvolvimento"],["Desenvolvimento com Kettlebell","Ombros","C","L","desenvolvimento"],["Elevação Lateral Unilateral na Máquina","Ombros","I","M","elev-lateral"],["Elevação Lateral com Elástico","Ombros","I","L","elev-lateral"],["Crucifixo Inverso Unilateral na Polia","Ombros","I","P","post-ombro"],["Crucifixo Inverso Unilateral na Máquina","Ombros","I","M","post-ombro"],["Rosca Direta no Smith","Bíceps","I","M","rosca-direta"],["Rosca Direta com Elástico","Bíceps","I","L","rosca-direta"],["Rosca Unilateral na Máquina","Bíceps","I","M","rosca-direta"],["Rosca Scott Unilateral na Máquina","Bíceps","I","M","rosca-scott"],["Rosca Scott Unilateral na Polia","Bíceps","I","P","rosca-scott"],["Rosca Martelo Unilateral na Polia","Bíceps","I","P","rosca-martelo"],["Rosca Martelo na Máquina","Bíceps","I","M","rosca-martelo"],["Tríceps Francês Unilateral com Halter","Tríceps","I","L","triceps-frances"],["Tríceps Francês na Máquina","Tríceps","I","M","triceps-frances"],["Tríceps Testa Unilateral com Halter","Tríceps","I","L","triceps-testa"],["Tríceps Testa no Smith","Tríceps","I","M","triceps-testa"],["Tríceps Coice Unilateral na Polia","Tríceps","I","P","triceps-coice"],["Tríceps Coice na Máquina","Tríceps","I","M","triceps-coice"],["Abdominal Supra Deitado","Abdômen","I","L","abd-supra"],["Abdominal Supra Deitado com Peso","Abdômen","I","L","abd-supra"],["Abdominal Supra Inclinado","Abdômen","I","L","abd-supra-incl"],["Abdominal Supra Inclinado com Peso","Abdômen","I","L","abd-supra-incl"],["Abdominal Supra na Máquina","Abdômen","I","M","abd-supra-maq"],["Abdominal Supra na Polia (Crunch)","Abdômen","I","P","abd-supra-maq"],["Abdominal Infra Deitado","Abdômen","I","L","abd-infra"],["Abdominal Infra Deitado Inclinado","Abdômen","I","L","abd-infra-incl"],["Abdominal Infra nas Paralelas","Abdômen","C","L","abd-infra-par"],["Abdominal Infra na Barra Fixa","Abdômen","C","L","abd-infra-par"],["Abdominal Infra com Tornozeleira","Abdômen","I","L","abd-infra-peso"],["Abdominal Infra na Polia","Abdômen","I","P","abd-infra-peso"]];
+const EXS_META = [["Supino Reto com Barra","Peito","C","L","supino-reto"],["Supino Reto com Halteres","Peito","C","L","supino-reto"],["Supino Reto na Máquina","Peito","C","M","supino-reto"],["Supino Reto no Smith","Peito","C","M","supino-reto"],["Supino Reto Pegada Fechada","Peito","C","L","supino-reto"],["Supino Inclinado com Barra","Peito","C","L","supino-incl"],["Supino Inclinado com Halteres","Peito","C","L","supino-incl"],["Supino Inclinado na Máquina","Peito","C","M","supino-incl"],["Supino Inclinado no Smith","Peito","C","M","supino-incl"],["Supino Declinado com Barra","Peito","C","L","supino-decl"],["Supino Declinado com Halteres","Peito","C","L","supino-decl"],["Supino Declinado na Máquina","Peito","C","M","supino-decl"],["Chest Press Articulado","Peito","C","M","supino-reto"],["Supino Unilateral na Máquina","Peito","C","M","supino-reto"],["Flexão de Braço","Peito","C","L","flexao"],["Flexão de Braço Inclinada","Peito","C","L","flexao"],["Flexão de Braço Declinada","Peito","C","L","flexao"],["Paralelas (Mergulho) para Peito","Peito","C","L","paralela"],["Crucifixo Reto com Halteres","Peito","I","L","crucifixo"],["Crucifixo Inclinado com Halteres","Peito","I","L","crucifixo"],["Crucifixo Declinado com Halteres","Peito","I","L","crucifixo"],["Crucifixo na Máquina (Peck Deck)","Peito","I","M","crucifixo"],["Cross Over Polia Alta","Peito","I","P","cross"],["Cross Over Polia Média","Peito","I","P","cross"],["Cross Over Polia Baixa","Peito","I","P","cross"],["Cross Over Unilateral","Peito","I","P","cross"],["Pullover com Halter","Peito","I","L","pullover"],["Pullover na Polia","Costas","I","P","pullover"],["Puxada Aberta na Frente","Costas","C","P","puxada"],["Puxada Aberta Atrás da Nuca","Costas","C","P","puxada"],["Puxada Fechada (Triângulo)","Costas","C","P","puxada"],["Puxada Neutra","Costas","C","P","puxada"],["Puxada Supinada","Costas","C","P","puxada"],["Puxada Unilateral na Polia","Costas","C","P","puxada"],["Puxada na Máquina Articulada","Costas","C","M","puxada"],["Pulldown com Corda","Costas","I","P","pulldown"],["Pulldown com Barra Reta","Costas","I","P","pulldown"],["Barra Fixa Pronada","Costas","C","L","barra-fixa"],["Barra Fixa Supinada","Costas","C","L","barra-fixa"],["Barra Fixa Neutra","Costas","C","L","barra-fixa"],["Barra Fixa Assistida (Graviton)","Costas","C","M","barra-fixa"],["Remada Curvada com Barra","Costas","C","L","remada-curv"],["Remada Curvada com Barra Supinada","Costas","C","L","remada-curv"],["Remada Curvada com Halteres","Costas","C","L","remada-curv"],["Remada Curvada no Smith","Costas","C","M","remada-curv"],["Remada Unilateral com Halter (Serrote)","Costas","C","L","remada-uni"],["Remada Unilateral na Polia","Costas","C","P","remada-uni"],["Remada Unilateral na Máquina","Costas","C","M","remada-uni"],["Remada Baixa Triângulo","Costas","C","P","remada-baixa"],["Remada Baixa Pegada Aberta","Costas","C","P","remada-baixa"],["Remada Baixa com Corda","Costas","C","P","remada-baixa"],["Remada Cavalinho (T-Bar)","Costas","C","L","remada-t"],["Remada Cavalinho na Máquina","Costas","C","M","remada-t"],["Remada na Máquina Articulada","Costas","C","M","remada-maq"],["Remada Sentada na Máquina","Costas","C","M","remada-maq"],["Remada Invertida na Barra","Costas","C","L","remada-inv"],["Remada Pendlay","Costas","C","L","remada-curv"],["Levantamento Terra","Costas","C","L","terra"],["Levantamento Terra Sumô","Costas","C","L","terra"],["Levantamento Terra com Barra Hexagonal","Costas","C","L","terra"],["Rack Pull","Costas","C","L","terra"],["Hiperextensão Lombar (Banco Romano)","Costas","I","L","lombar"],["Hiperextensão Lombar na Máquina","Costas","I","M","lombar"],["Good Morning","Costas","C","L","lombar"],["Encolhimento com Barra","Costas","I","L","encolhimento"],["Encolhimento com Halteres","Costas","I","L","encolhimento"],["Encolhimento na Máquina","Costas","I","M","encolhimento"],["Encolhimento no Smith","Costas","I","M","encolhimento"],["Desenvolvimento com Barra pela Frente","Ombros","C","L","desenvolvimento"],["Desenvolvimento com Barra por Trás","Ombros","C","L","desenvolvimento"],["Desenvolvimento com Halteres Sentado","Ombros","C","L","desenvolvimento"],["Desenvolvimento com Halteres em Pé","Ombros","C","L","desenvolvimento"],["Desenvolvimento na Máquina","Ombros","C","M","desenvolvimento"],["Desenvolvimento no Smith","Ombros","C","M","desenvolvimento"],["Desenvolvimento Arnold","Ombros","C","L","desenvolvimento"],["Desenvolvimento Unilateral com Halter","Ombros","C","L","desenvolvimento"],["Landmine Press","Ombros","C","L","desenvolvimento"],["Elevação Lateral com Halteres","Ombros","I","L","elev-lateral"],["Elevação Lateral Sentado","Ombros","I","L","elev-lateral"],["Elevação Lateral Unilateral com Halter","Ombros","I","L","elev-lateral"],["Elevação Lateral na Polia","Ombros","I","P","elev-lateral"],["Elevação Lateral Unilateral na Polia","Ombros","I","P","elev-lateral"],["Elevação Lateral na Máquina","Ombros","I","M","elev-lateral"],["Elevação Lateral Inclinada no Banco","Ombros","I","L","elev-lateral"],["Elevação Frontal com Halteres","Ombros","I","L","elev-frontal"],["Elevação Frontal Alternada","Ombros","I","L","elev-frontal"],["Elevação Frontal e Lateral Alternada","Ombros","I","L","elev-combinada"],["Elevação Frontal com Barra","Ombros","I","L","elev-frontal"],["Elevação Frontal com Anilha","Ombros","I","L","elev-frontal"],["Elevação Frontal na Polia","Ombros","I","P","elev-frontal"],["Elevação Frontal com Corda","Ombros","I","P","elev-frontal"],["Crucifixo Inverso Máquina","Ombros","I","M","post-ombro"],["Crucifixo Inverso com Halteres","Ombros","I","L","post-ombro"],["Crucifixo Inverso no Banco Inclinado","Ombros","I","L","post-ombro"],["Crucifixo Invertido na Polia","Ombros","I","P","post-ombro"],["Face Pull","Ombros","I","P","post-ombro"],["Remada Alta com Barra","Ombros","C","L","remada-alta"],["Remada Alta com Halteres","Ombros","C","L","remada-alta"],["Remada Alta na Polia","Ombros","C","P","remada-alta"],["Rosca Direta com Barra","Bíceps","I","L","rosca-direta"],["Rosca Direta com Barra W","Bíceps","I","L","rosca-direta"],["Rosca Direta com Halteres","Bíceps","I","L","rosca-direta"],["Rosca Direta na Polia","Bíceps","I","P","rosca-direta"],["Rosca Direta Unilateral na Polia","Bíceps","I","P","rosca-direta"],["Rosca Direta na Máquina","Bíceps","I","M","rosca-direta"],["Rosca Alternada com Halteres","Bíceps","I","L","rosca-direta"],["Rosca Alternada Sentado","Bíceps","I","L","rosca-direta"],["Rosca Martelo com Halteres","Bíceps","I","L","rosca-martelo"],["Rosca Martelo Alternada","Bíceps","I","L","rosca-martelo"],["Rosca Martelo na Polia","Bíceps","I","P","rosca-martelo"],["Rosca Martelo Barra H","Bíceps","I","L","rosca-martelo"],["Rosca Martelo Cruzada","Bíceps","I","L","rosca-martelo"],["Rosca Scott (Máquina)","Bíceps","I","M","rosca-scott"],["Banco Scott com Barra W","Bíceps","I","L","rosca-scott"],["Banco Scott com Barra Reta","Bíceps","I","L","rosca-scott"],["Rosca Scott Unilateral com Halter","Bíceps","I","L","rosca-scott"],["Rosca Scott na Polia","Bíceps","I","P","rosca-scott"],["Rosca Concentrada","Bíceps","I","L","rosca-conc"],["Rosca Bayesian na Polia","Bíceps","I","P","rosca-bayes"],["Rosca Inclinada com Halteres","Bíceps","I","L","rosca-incl"],["Rosca Spider","Bíceps","I","L","rosca-spider"],["Rosca 21","Bíceps","I","L","rosca-direta"],["Rosca Inversa com Barra","Antebraço","I","L","rosca-inversa"],["Rosca Inversa com Barra W","Antebraço","I","L","rosca-inversa"],["Rosca Inversa na Polia","Antebraço","I","P","rosca-inversa"],["Tríceps Pulley Barra Reta","Tríceps","I","P","triceps-pulley"],["Tríceps Pulley Barra V","Tríceps","I","P","triceps-pulley"],["Tríceps Triângulo na Polia","Tríceps","I","P","triceps-pulley"],["Tríceps Corda","Tríceps","I","P","triceps-pulley"],["Tríceps Pulley Pegada Invertida","Tríceps","I","P","triceps-pulley"],["Tríceps Unilateral na Polia","Tríceps","I","P","triceps-pulley"],["Tríceps Testa com Barra W","Tríceps","I","L","triceps-testa"],["Tríceps Testa com Barra Reta","Tríceps","I","L","triceps-testa"],["Tríceps Testa com Halteres","Tríceps","I","L","triceps-testa"],["Tríceps Testa na Polia","Tríceps","I","P","triceps-testa"],["Tríceps Francês com Halter","Tríceps","I","L","triceps-frances"],["Tríceps Francês com Barra W","Tríceps","I","L","triceps-frances"],["Tríceps Francês na Polia","Tríceps","I","P","triceps-frances"],["Tríceps Francês Unilateral no Crossover","Tríceps","I","P","triceps-frances"],["Tríceps Coice com Halter (Kickback)","Tríceps","I","L","triceps-coice"],["Tríceps Coice na Polia","Tríceps","I","P","triceps-coice"],["Tríceps Banco (Mergulho no Banco)","Tríceps","C","L","paralela-t"],["Paralelas (Mergulho) para Tríceps","Tríceps","C","L","paralela-t"],["Tríceps na Máquina","Tríceps","I","M","triceps-maq"],["Supino Fechado para Tríceps","Tríceps","C","L","supino-fechado"],["Rosca Punho","Antebraço","I","L","punho"],["Extensão de Punho","Antebraço","I","L","punho"],["Rosca Punho + Extensão de Punho","Antebraço","I","L","punho"],["Rosca Punho na Polia","Antebraço","I","P","punho"],["Farmer's Walk (Caminhada do Fazendeiro)","Antebraço","C","L","farmer"],["Suspensão na Barra (Dead Hang)","Antebraço","I","L","farmer"],["Agachamento Livre com Barra","Quadríceps","C","L","agachamento"],["Agachamento no Smith","Quadríceps","C","M","agachamento"],["Agachamento Hack Invertido","Quadríceps","C","M","agachamento"],["Agachamento na Máquina Pêndulo","Quadríceps","C","M","agachamento"],["Agachamento Sumô com Halter","Quadríceps","C","L","agachamento-sumo"],["Agachamento Sumô com Barra","Quadríceps","C","L","agachamento-sumo"],["Agachamento Búlgaro com Halteres","Quadríceps","C","L","bulgaro"],["Agachamento Búlgaro no Smith","Quadríceps","C","M","bulgaro"],["Leg Press 45°","Quadríceps","C","M","leg-press"],["Leg Press Horizontal","Quadríceps","C","M","leg-press"],["Cadeira Extensora","Quadríceps","I","M","extensora"],["Cadeira Extensora Unilateral","Quadríceps","I","M","extensora"],["Afundo com Halteres","Quadríceps","C","L","afundo"],["Afundo com Barra","Quadríceps","C","L","afundo"],["Afundo no Smith","Quadríceps","C","M","afundo"],["Step Up no Banco","Quadríceps","C","L","step-up"],["Sissy Squat","Quadríceps","I","L","sissy"],["Cadeira Flexora","Posterior","I","M","flexora-sentada"],["Cadeira Flexora Unilateral","Posterior","I","M","flexora-sentada"],["Mesa Flexora","Posterior","I","M","flexora-deitada"],["Flexora em Pé Unilateral","Posterior","I","M","flexora-pe"],["Stiff com Barra","Posterior","C","L","stiff"],["Stiff com Halteres","Posterior","C","L","stiff"],["Stiff no Smith","Posterior","C","M","stiff"],["Stiff Unilateral com Halter","Posterior","C","L","stiff"],["Flexão Nórdica","Posterior","I","L","nordica"],["Elevação Pélvica com Barra (Hip Thrust)","Glúteos","C","L","hip-thrust"],["Elevação Pélvica na Máquina","Glúteos","C","M","hip-thrust"],["Elevação Pélvica no Smith","Glúteos","C","M","hip-thrust"],["Elevação Pélvica Unilateral","Glúteos","C","L","hip-thrust"],["Ponte de Glúteo","Glúteos","I","L","ponte"],["Cadeira Abdutora","Glúteos","I","M","abdutora"],["Abdução em Pé com Caneleira","Glúteos","I","L","abdutora"],["Cadeira Adutora","Glúteos","I","M","adutora"],["Panturrilha em Pé na Máquina","Panturrilha","I","M","pant-pe"],["Panturrilha em Pé no Squat","Panturrilha","I","M","pant-pe"],["Panturrilha em Pé no Smith","Panturrilha","I","M","pant-pe"],["Panturrilha em Pé Unilateral com Halter","Panturrilha","I","L","pant-pe"],["Panturrilha em Pé no Degrau","Panturrilha","I","L","pant-pe"],["Panturrilha no Leg Press","Panturrilha","I","M","pant-leg"],["Panturrilha Burrinho","Panturrilha","I","M","pant-pe"],["Abdominal Supra","Abdômen","I","L","abd-supra"],["Abdominal Infra","Abdômen","I","L","abd-infra"],["Abdominal Supra e Infra","Abdômen","I","L","abd-supra"],["Abdominal na Máquina","Abdômen","I","M","abd-supra"],["Abdominal na Polia (Crunch)","Abdômen","I","P","abd-supra"],["Abdominal Declinado","Abdômen","I","L","abd-supra"],["Abdominal Oblíquo","Abdômen","I","L","abd-obl"],["Abdominal Bicicleta","Abdômen","I","L","abd-obl"],["Russian Twist","Abdômen","I","L","abd-obl"],["Rotação na Polia (Woodchopper)","Abdômen","I","P","abd-obl"],["Prancha","Abdômen","I","L","prancha"],["Prancha Lateral","Abdômen","I","L","prancha"],["Elevação de Pernas na Barra","Abdômen","I","L","abd-infra"],["Elevação de Pernas no Banco","Abdômen","I","L","abd-infra"],["Elevação de Joelhos na Paralela","Abdômen","I","L","abd-infra"],["Abdominal Canivete","Abdômen","I","L","abd-infra"],["Roda Abdominal","Abdômen","I","L","prancha"],["Dead Bug","Abdômen","I","L","prancha"],["Agachamento Frontal com Barra","Quadríceps","C","L","agachamento"],["Agachamento Frontal no Smith","Quadríceps","C","M","agachamento"],["Agachamento no Hack","Quadríceps","C","M","agachamento"],["Agachamento Belt Squat","Quadríceps","C","M","agachamento"],["Agachamento Goblet com Halter","Quadríceps","C","L","agachamento"],["Agachamento Goblet com Kettlebell","Quadríceps","C","L","agachamento"],["Agachamento Zercher","Quadríceps","C","L","agachamento"],["Agachamento com Halteres","Quadríceps","C","L","agachamento"],["Agachamento no Banco (Box Squat)","Quadríceps","C","L","agachamento"],["Agachamento Pistol (Unilateral)","Quadríceps","C","L","agachamento"],["Agachamento Cossaco","Quadríceps","C","L","agachamento"],["Agachamento na Polia","Quadríceps","C","P","agachamento"],["Agachamento Sumô com Kettlebell","Glúteos","C","L","agachamento-sumo"],["Agachamento Sumô no Smith","Glúteos","C","M","agachamento-sumo"],["Leg Press 45° Unilateral","Quadríceps","C","M","leg-press"],["Leg Press Horizontal Unilateral","Quadríceps","C","M","leg-press"],["Leg Press Vertical","Quadríceps","C","M","leg-press"],["Leg Press Pés Baixos (ênfase quadríceps)","Quadríceps","C","M","leg-press"],["Leg Press Pés Altos (ênfase glúteo)","Glúteos","C","M","leg-press"],["Leg Press Pés Afastados","Glúteos","C","M","leg-press"],["Cadeira Extensora com Pausa no Topo","Quadríceps","I","M","extensora"],["Extensão de Joelho com Caneleira","Quadríceps","I","L","extensora"],["Extensão de Joelho na Polia","Quadríceps","I","P","extensora"],["Afundo na Polia","Quadríceps","C","P","afundo"],["Afundo com Kettlebell","Quadríceps","C","L","afundo"],["Passada com Halteres","Quadríceps","C","L","passada"],["Passada com Barra","Quadríceps","C","L","passada"],["Passada no Smith","Quadríceps","C","M","passada"],["Passada Reversa com Halteres","Quadríceps","C","L","passada"],["Passada Reversa com Barra","Quadríceps","C","L","passada"],["Passada Reversa no Smith","Quadríceps","C","M","passada"],["Passada Lateral com Halteres","Quadríceps","C","L","passada"],["Passada Cruzada (Curtsy Lunge)","Quadríceps","C","L","passada"],["Agachamento Búlgaro com Barra","Quadríceps","C","L","bulgaro"],["Agachamento Búlgaro na Polia","Quadríceps","C","P","bulgaro"],["Agachamento Búlgaro com Kettlebell","Quadríceps","C","L","bulgaro"],["Step Up com Halteres","Glúteos","C","L","step-up"],["Step Up com Barra","Glúteos","C","L","step-up"],["Step Up no Smith","Glúteos","C","M","step-up"],["Step Up Lateral","Glúteos","C","L","step-up"],["Sissy Squat Livre","Quadríceps","I","L","sissy"],["Sissy Squat na Máquina","Quadríceps","I","M","sissy"],["Cadeira Flexora com Pausa","Posterior","I","M","flexora-sentada"],["Mesa Flexora Unilateral","Posterior","I","M","flexora-deitada"],["Flexora em Pé na Máquina","Posterior","I","M","flexora-pe"],["Flexora em Pé na Polia","Posterior","I","P","flexora-pe"],["Flexora em Pé com Caneleira","Posterior","I","L","flexora-pe"],["Flexão de Pernas na Bola Suíça","Posterior","I","L","flexora-bola"],["Stiff com Kettlebell","Posterior","C","L","stiff"],["Stiff Unilateral na Polia","Posterior","C","P","stiff"],["Stiff na Polia","Posterior","C","P","stiff"],["Levantamento Terra Romeno com Barra","Posterior","C","L","terra-romeno"],["Levantamento Terra Romeno com Halteres","Posterior","C","L","terra-romeno"],["Levantamento Terra Romeno Unilateral","Posterior","C","L","terra-romeno"],["Levantamento Terra Romeno no Smith","Posterior","C","M","terra-romeno"],["Good Morning com Barra","Posterior","C","L","good-morning"],["Good Morning no Smith","Posterior","C","M","good-morning"],["Flexão Nórdica Assistida com Elástico","Posterior","I","L","nordica"],["Flexão Nórdica na Máquina","Posterior","I","M","nordica"],["Glute Ham Raise (GHR)","Posterior","I","M","nordica"],["Elevação Pélvica com Halter","Glúteos","C","L","hip-thrust"],["Elevação Pélvica Unilateral na Máquina","Glúteos","C","M","hip-thrust"],["Elevação Pélvica com Elástico","Glúteos","C","L","hip-thrust"],["Ponte de Glúteo Unilateral","Glúteos","I","L","ponte"],["Ponte de Glúteo com Anilha","Glúteos","I","L","ponte"],["Ponte de Glúteo com Barra","Glúteos","I","L","ponte"],["Coice na Polia (Glúteo)","Glúteos","I","P","coice"],["Coice na Polia Unilateral com Tornozeleira","Glúteos","I","P","coice"],["Coice na Máquina (Glute Kickback)","Glúteos","I","M","coice"],["Coice no Smith","Glúteos","I","M","coice"],["Coice com Caneleira em 4 Apoios","Glúteos","I","L","coice"],["Coice com Elástico","Glúteos","I","L","coice"],["Glúteo na Máquina Multiglúteo","Glúteos","I","M","coice"],["Cadeira Abdutora Inclinada à Frente","Glúteos","I","M","abdutora"],["Cadeira Abdutora Unilateral","Glúteos","I","M","abdutora"],["Abdução de Quadril na Polia","Glúteos","I","P","abdutora"],["Abdução Deitado com Caneleira","Glúteos","I","L","abdutora"],["Abdução com Elástico (Mini Band)","Glúteos","I","L","abdutora"],["Caminhada Lateral com Elástico","Glúteos","I","L","abdutora"],["Adução de Quadril na Polia","Glúteos","I","P","adutora"],["Adução Deitado com Caneleira","Glúteos","I","L","adutora"],["Pull Through na Polia","Glúteos","I","P","extensao-quadril"],["Hiperextensão para Glúteo","Glúteos","I","L","extensao-quadril"],["Hiperextensão para Glúteo na Máquina","Glúteos","I","M","extensao-quadril"],["Panturrilha em Pé no Hack","Panturrilha","I","M","pant-pe"],["Panturrilha em Pé com Halter","Panturrilha","I","L","pant-pe"],["Panturrilha Sentado na Máquina (Sóleo)","Panturrilha","I","M","pant-sent"],["Panturrilha Sentado com Halter","Panturrilha","I","L","pant-sent"],["Panturrilha Sentado Unilateral","Panturrilha","I","M","pant-sent"],["Panturrilha no Leg Press Unilateral","Panturrilha","I","M","pant-leg"],["Elevação de Tibial (Tibial Anterior)","Panturrilha","I","L","tibial"],["Supino Reto Unilateral com Halter","Peito","C","L","supino-reto"],["Supino Reto na Polia","Peito","C","P","supino-reto"],["Supino Reto com Kettlebell","Peito","C","L","supino-reto"],["Supino Inclinado Unilateral com Halter","Peito","C","L","supino-incl"],["Supino Inclinado na Polia","Peito","C","P","supino-incl"],["Supino Inclinado Unilateral na Máquina","Peito","C","M","supino-incl"],["Crucifixo Unilateral na Máquina","Peito","I","M","crucifixo"],["Crucifixo na Polia Deitado","Peito","I","P","crucifixo"],["Puxada Aberta Unilateral na Máquina","Costas","C","M","puxada"],["Puxada com Pegada Supinada na Máquina","Costas","C","M","puxada"],["Remada Baixa Unilateral na Polia","Costas","C","P","remada-baixa"],["Remada Baixa Pegada Supinada","Costas","C","P","remada-baixa"],["Remada Unilateral na Máquina Articulada","Costas","C","M","remada-maq"],["Remada no Smith Unilateral","Costas","C","M","remada-maq"],["Desenvolvimento Unilateral na Máquina","Ombros","C","M","desenvolvimento"],["Desenvolvimento na Polia","Ombros","C","P","desenvolvimento"],["Desenvolvimento com Kettlebell","Ombros","C","L","desenvolvimento"],["Elevação Lateral Unilateral na Máquina","Ombros","I","M","elev-lateral"],["Elevação Lateral com Elástico","Ombros","I","L","elev-lateral"],["Crucifixo Inverso Unilateral na Polia","Ombros","I","P","post-ombro"],["Crucifixo Inverso Unilateral na Máquina","Ombros","I","M","post-ombro"],["Rosca Direta no Smith","Bíceps","I","M","rosca-direta"],["Rosca Direta com Elástico","Bíceps","I","L","rosca-direta"],["Rosca Unilateral na Máquina","Bíceps","I","M","rosca-direta"],["Rosca Scott Unilateral na Máquina","Bíceps","I","M","rosca-scott"],["Rosca Scott Unilateral na Polia","Bíceps","I","P","rosca-scott"],["Rosca Martelo Unilateral na Polia","Bíceps","I","P","rosca-martelo"],["Rosca Martelo na Máquina","Bíceps","I","M","rosca-martelo"],["Tríceps Francês Unilateral com Halter","Tríceps","I","L","triceps-frances"],["Tríceps Francês na Máquina","Tríceps","I","M","triceps-frances"],["Tríceps Testa Unilateral com Halter","Tríceps","I","L","triceps-testa"],["Tríceps Testa no Smith","Tríceps","I","M","triceps-testa"],["Tríceps Coice Unilateral na Polia","Tríceps","I","P","triceps-coice"],["Tríceps Coice na Máquina","Tríceps","I","M","triceps-coice"],["Abdominal Supra Deitado","Abdômen","I","L","abd-supra"],["Abdominal Supra Deitado com Peso","Abdômen","I","L","abd-supra"],["Abdominal Supra Inclinado","Abdômen","I","L","abd-supra-incl"],["Abdominal Supra Inclinado com Peso","Abdômen","I","L","abd-supra-incl"],["Abdominal Supra na Máquina","Abdômen","I","M","abd-supra-maq"],["Abdominal Supra na Polia (Crunch)","Abdômen","I","P","abd-supra-maq"],["Abdominal Infra Deitado","Abdômen","I","L","abd-infra"],["Abdominal Infra Deitado Inclinado","Abdômen","I","L","abd-infra-incl"],["Abdominal Infra nas Paralelas","Abdômen","C","L","abd-infra-par"],["Abdominal Infra na Barra Fixa","Abdômen","C","L","abd-infra-par"],["Abdominal Infra com Tornozeleira","Abdômen","I","L","abd-infra-peso"],["Abdominal Infra na Polia","Abdômen","I","P","abd-infra-peso"]];
 (function(){
   EXS_META.forEach(([n,g])=>{
     (EXS_GRUPO[g]=EXS_GRUPO[g]||[]);
@@ -6217,19 +6232,118 @@ const EXS_META = [["Supino Reto com Barra","Peito","C","L","supino-reto"],["Supi
 /* exercícios em que cada repetição anotada vale mais de um movimento:
    "Elevação Frontal e Lateral Alternada" 10x8 = 8 frontais + 8 laterais com 10 kg (2 movimentos por repetição) */
 function movPorRep(nome){ return nome==="Elevação Frontal e Lateral Alternada"? 2 : 1; }
-/* nomes antigos das fichas (vindos da planilha) apontam para o nome do catálogo, só para o cálculo */
+/* ================= um exercício, um nome ================= */
+/* sinônimos e grafias antigas (da planilha) apontam para o nome mais popular, que é o que fica nas listas */
+const ALIAS_NOME = {
+  /* peito */
+  "Supino Reto barra":"Supino Reto com Barra", "Supino Reto na barra":"Supino Reto com Barra",
+  "Supino inclinado na barra":"Supino Inclinado com Barra", "Supino Inclinado na Barra":"Supino Inclinado com Barra",
+  "Supino inclinado halteres":"Supino Inclinado com Halteres",
+  "Supino deitado halteres":"Supino Reto com Halteres", "Supino Deitado com Halteres":"Supino Reto com Halteres",
+  "Supino Máquina inclinado":"Supino Inclinado na Máquina", "Supino Máquina Inclinado":"Supino Inclinado na Máquina",
+  "Supino Declinado Máquina":"Supino Declinado na Máquina",
+  "Supino no Smith":"Supino Reto no Smith",
+  "Crucifixo maquina":"Crucifixo na Máquina (Peck Deck)", "Crucifixo":"Crucifixo Reto com Halteres",
+  "Paralelas (Mergulho)":"Paralelas (Mergulho) para Peito",
+  "Cross over":"Cross Over Polia Média", "Cross Over":"Cross Over Polia Média",
+  /* costas */
+  "Remada baixa com triângulo":"Remada Baixa Triângulo", "Remada Baixa Triangulo":"Remada Baixa Triângulo",
+  "Remada Baixa Aberta":"Remada Baixa Pegada Aberta",
+  "Remada Curvada barra pegada pronada":"Remada Curvada com Barra", "Remada Curvada com Barra Pronada":"Remada Curvada com Barra",
+  "Remada Curvada Supinada":"Remada Curvada com Barra Supinada",
+  "Remada Invertida":"Remada Invertida na Barra",
+  "Puxada aberta com barra":"Puxada Aberta na Frente", "Puxada Aberta com Barra":"Puxada Aberta na Frente",
+  "Pulldown Braço Estendido":"Pulldown",
+  "Barra Fixa Assistida":"Barra Fixa Assistida (Graviton)",
+  "Levantamento Terra Romeno":"Levantamento Terra Romeno com Barra",
+  /* ombros */
+  "Desenvolvimento na polia":"Desenvolvimento na Polia", "Desenvolvimento no haltere":"Desenvolvimento com Halteres",
+  "Elevação Frontal na Polia Bilateral":"Elevação Frontal na Polia", "Elevação Lateral":"Elevação Lateral com Halteres",
+  /* bíceps */
+  "Rosca Direta Barra":"Rosca Direta com Barra", "Rosca Direta com Barra Reta":"Rosca Direta com Barra", "Rosca direta":"Rosca Direta com Barra",
+  "Rosca Direta barra W":"Rosca Direta com Barra W", "Rosca barra W":"Rosca Direta com Barra W", "Rosca Direta Barra W":"Rosca Direta com Barra W",
+  "Banco Scott com barra W":"Banco Scott com Barra W", "Rosca Scott com barra W":"Banco Scott com Barra W",
+  "Banco Scott":"Rosca Scott",
+  "Rosca Martelo na barra H":"Rosca Martelo Barra H",
+  "Rosca Scott com Halter":"Rosca Scott Unilateral com Halter",
+  "Rosca na Polia Baixa":"Rosca Direta na Polia",
+  "Rosca Bayesian":"Rosca Bayesian na Polia",
+  "Rosca Martelo na Polia (Corda)":"Rosca Martelo na Polia",
+  /* tríceps */
+  "Tríceps corda no crossover":"Tríceps Corda", "Tríceps Corda no Crossover":"Tríceps Corda",
+  "Tríceps francês unilateral no crossover":"Tríceps Francês Unilateral no Crossover",
+  "Tríceps Francês Unilateral na polia":"Tríceps Francês Unilateral no Crossover",
+  "Tríceps Testa barra W":"Tríceps Testa com Barra W", "Tríceps Testa Barra W":"Tríceps Testa com Barra W",
+  "Tríceps Testa Deitado barra W":"Tríceps Testa com Barra W", "Tríceps Testa Deitado Barra W":"Tríceps Testa com Barra W",
+  "Tríceps Coice (Kickback)":"Tríceps Coice com Halter (Kickback)",
+  "Supino Fechado":"Supino Fechado para Tríceps",
+  "Tríceps Frances deitado com barra W":"Tríceps Francês Deitado com Barra W", "Tríceps Francês Deitado Barra W":"Tríceps Francês Deitado com Barra W",
+  /* pernas e glúteos */
+  "Agachamento Squat":"Agachamento no Squat", "Agachamento no Squat (Hack)":"Agachamento no Hack",
+  "Agachamento Frontal":"Agachamento Frontal com Barra", "Agachamento Goblet":"Agachamento Goblet com Halter",
+  "Agachamento Sumô":"Agachamento Sumô com Barra", "Búlgaro":"Agachamento Búlgaro com Halteres",
+  "Leg Press":"Leg Press 45°", "Leg Presa Machine":"Leg Press Horizontal",
+  "Passada (Avanço)":"Passada com Halteres",
+  "Stiff":"Stiff com Barra",
+  "Elevação Pélvica":"Elevação Pélvica com Barra (Hip Thrust)", "Elevação Pélvica (Hip Thrust)":"Elevação Pélvica com Barra (Hip Thrust)",
+  "Glúteo na Polia (Coice)":"Coice na Polia (Glúteo)", "Abdução na Polia":"Abdução de Quadril na Polia", "Abdutor":"Cadeira Abdutora",
+  /* panturrilha */
+  "Panturrilha em pé":"Panturrilha em Pé na Máquina", "Panturrilha no Squat":"Panturrilha em Pé no Squat",
+  "Panturrilha sentado":"Panturrilha Sentado na Máquina (Sóleo)", "Panturrilha Sentado":"Panturrilha Sentado na Máquina (Sóleo)",
+  "Panturrilha no Smith":"Panturrilha em Pé no Smith", "Panturrilha Unilateral com Halter":"Panturrilha em Pé Unilateral com Halter",
+  "Panturrilhas no Leg Horizontal":"Panturrilha no Leg Press",
+  /* abdômen */
+  "Abdominal":"Abdominal Supra e Infra",
+  "Abdominal Supra Deitado":"Abdominal Supra", "Abdominal Infra Deitado":"Abdominal Infra",
+  "Abdominal na Máquina":"Abdominal Supra na Máquina", "Abdominal na Polia (Crunch)":"Abdominal Supra na Polia (Crunch)",
+  "Abdominal Infra na Barra Fixa":"Elevação de Pernas na Barra"
+};
+function normNome(s){ return String(s==null?"":s).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/\s+/g," ").trim(); }
+const ALIAS_NORM = {};
+Object.entries(ALIAS_NOME).forEach(([k,v])=>{ ALIAS_NORM[normNome(k)]=v; });
+function canon(nome){ return ALIAS_NOME[nome] || ALIAS_NORM[normNome(nome)] || nome; }
+/* nomes genéricos que continuam existindo: só emprestam as características de um irmão mais específico, para o cálculo */
 const ALIAS_META = {
-  "Remada Curvada com Barra":"Remada Curvada com Barra Pronada",
   "Agachamento no Squat":"Agachamento no Smith",
-  "Supino Máquina Inclinado":"Supino Inclinado na Máquina",
   "Pulldown":"Pulldown com Barra Reta",
   "Rosca Scott":"Rosca Scott (Máquina)",
   "Rosca Inversa":"Rosca Inversa com Barra",
-  "Rosca Martelo na Polia":"Rosca Martelo na Polia (Corda)",
-  "Tríceps Testa Deitado Barra W":"Tríceps Testa com Barra W",
-  "Rosca Direta Barra W":"Rosca Direta com Barra W"
+  "Barra Fixa":"Barra Fixa Pronada",
+  "Desenvolvimento com Barra":"Desenvolvimento com Barra pela Frente",
+  "Desenvolvimento com Halteres":"Desenvolvimento com Halteres Sentado",
+  "Tríceps Francês Deitado com Barra W":"Tríceps Francês com Barra W"
 };
-const metaDe = nome => EXS_META.find(m=>m[0]===nome) || EXS_META.find(m=>m[0]===ALIAS_META[nome]) || null;
+const metaDe = nome => { const c=canon(nome);
+  return EXS_META.find(m=>m[0]===c) || EXS_META.find(m=>m[0]===ALIAS_META[c]) || null; };
+/* tira do catálogo os nomes redundantes e garante que o nome mais popular esteja nas listas */
+function finalizaCatalogo(){
+  for(let i=EXS_META.length-1;i>=0;i--) if(canon(EXS_META[i][0])!==EXS_META[i][0]) EXS_META.splice(i,1);
+  for(let i=CATALOGO.length-1;i>=0;i--) if(canon(CATALOGO[i])!==CATALOGO[i]) CATALOGO.splice(i,1);
+  EXS_META.forEach(m=>{ if(!CATALOGO.includes(m[0])) CATALOGO.push(m[0]); });
+  Object.values(ALIAS_NOME).forEach(n=>{ if(!CATALOGO.includes(n)) CATALOGO.push(n); });
+  Object.keys(EXS_GRUPO).forEach(g=>{ EXS_GRUPO[g]=EXS_GRUPO[g].filter(n=>canon(n)===n); });
+  CATALOGO.forEach(n=>{
+    const m=metaDe(n), g=m? m[1] : grupoDoExercicio(n);
+    (EXS_GRUPO[g]=EXS_GRUPO[g]||[]); if(!EXS_GRUPO[g].includes(n)) EXS_GRUPO[g].push(n);
+  });
+}
+finalizaCatalogo();
+/* fichas, tempos de descanso e lista de evitados passam a usar o nome mais popular */
+function normalizaNomesFichas(){
+  let mudou=false;
+  Object.values(FICHAS).forEach(f=>(f.ex||[]).forEach(e=>{
+    const c=canon(e.n); if(c!==e.n){ e.n=c; mudou=true; }
+    if(Array.isArray(e.alt)){
+      const alt=[...new Set(e.alt.map(canon))].filter(x=>x!==e.n);
+      if(JSON.stringify(alt)!==JSON.stringify(e.alt)){ e.alt=alt; mudou=true; }
+    }
+  }));
+  Object.keys(descanso).forEach(k=>{ const c=canon(k);
+    if(c!==k){ if(descanso[c]==null) descanso[c]=descanso[k]; delete descanso[k]; mudou=true; } });
+  const ev=[...new Set(EX_EVITAR.map(canon))];
+  if(ev.length!==EX_EVITAR.length || ev.some((n,i)=>n!==EX_EVITAR[i])){ EX_EVITAR=ev; mudou=true; }
+  return mudou;
+}
 
 /* ================= gerador de treino ================= */
 const NIV_TREINO = {
@@ -6443,7 +6557,7 @@ $("efSalvar").onclick=()=>{
         const v=velhos.find(x=>x.n===e.n);
         const base = v? {...v} : (()=>{ const hist=historicoEx(e.n), u=hist[hist.length-1];
           return {n:e.n, a:u? u.series.slice() : [], h:hist.map(x=>x.ultima.carga), alt:[],
-                  simples:/abdominal|prancha|dead bug/i.test(e.n)}; })();
+                  simples:/prancha|dead bug/i.test(e.n)}; })();
         if(e.ns){ base.ns=e.ns; base.rep=e.rep; base.drop=e.drop;
           if(e.desc) descanso[e.n]=e.desc; }
         return base;
@@ -7199,37 +7313,94 @@ function melhorE1(series){
   (series||[]).forEach(s=>{ const a=s? analisaSerie(s):null; if(a && a.e1>m) m=a.e1; });
   return m;
 }
+/* ===== registro anterior: sempre do MESMO exercício, da última vez em que ele foi feito ===== */
+function serieComNumero(x){ return x!=null && String(x).trim()!=="" && !ehStatusTxt(x); }
+function dataDoTreino(){ try{ return editandoSessao||dataSel; }catch(e){ return dataSel; } }
+function repsDaSerie(s){
+  let n=0;
+  String(s==null?"":s).split("|").forEach(p=>{ const a=parse(p.trim()); if(a.ok) a.v.forEach(([c,r])=>{ n+=r; }); });
+  return n;
+}
+/* a planilha antiga mora nas fichas (a = última vez, h = cargas); só vale para o MESMO exercício e
+   só enquanto o app ainda não tem sessão dele, porque o treino feito no app é sempre mais recente */
+function registroPlanilha(nome){
+  const alvo=canon(nome);
+  if(ehDual(alvo)) return null;           // a ficha guarda ali uma cópia dos treinos do app, não da planilha
+  for(const f of Object.values(FICHAS)){
+    const x=(f.ex||[]).find(y=>canon(y.n)===alvo && (y.a||[]).some(serieComNumero));
+    if(!x) continue;
+    const feitas=x.a.filter(serieComNumero);
+    return {iso:null, planilha:true, series:x.a.slice(), h:(x.h||[]).slice(),
+      trab:trabalhoExercicio(feitas,nome), e1:melhorE1(feitas), n:feitas.length,
+      reps:feitas.reduce((a,s)=>a+repsDaSerie(s),0),
+      carga:Math.max(0, ...feitas.map(s=>{ const a=analisaSerie(s); return (a&&a.carga)||0; }))};
+  }
+  return null;
+}
+/* sessões em que o exercício foi feito (da mais antiga à mais recente); só as anteriores a 'ateIso', se informada */
 function sessoesDoExercicio(nome, ateIso){
-  const out=[];
+  const out=[], alvo=canon(nome);
   Object.entries(DIAS).sort((a,b)=>a[0]<b[0]?-1:1).forEach(([iso,d])=>{
     if(ateIso && iso>=ateIso) return;
     const t=d.treino; if(!t || t==="descanso" || !t.detalhe) return;
     t.detalhe.forEach(e=>{
-      if(e.nome!==nome) return;
-      const feitas=(e.series||[]).filter(x=>x!=null);
-      if(feitas.length) out.push({iso, trab:trabalhoExercicio(feitas,nome), e1:melhorE1(feitas), n:feitas.length});
+      if(canon(e.nome)!==alvo) return;
+      const feitas=(e.series||[]).filter(serieComNumero);
+      if(!feitas.length) return;
+      out.push({iso, series:(e.series||[]).slice(), trab:trabalhoExercicio(feitas,nome), e1:melhorE1(feitas), n:feitas.length,
+        reps:feitas.reduce((a,s)=>a+repsDaSerie(s),0),
+        carga:Math.max(0, ...feitas.map(s=>{ const a=analisaSerie(s); return (a&&a.carga)||0; }))});
     });
   });
+  if(!out.length){ const p=registroPlanilha(nome); if(p) out.push(p); }
   return out;
+}
+function registroAnterior(nome, ateIso){ const l=sessoesDoExercicio(nome, ateIso); return l.length? l[l.length-1] : null; }
+/* o que o cartão do exercício mostra como "última vez": só o histórico do próprio exercício */
+function exAnterior(e){
+  const todas=sessoesDoExercicio(e.nome, dataDoTreino()), ant=todas.length? todas[todas.length-1] : null;
+  const plan=registroPlanilha(e.nome);
+  const cargasApp=todas.filter(s=>!s.planilha).map(s=>s.carga).filter(v=>v>0);
+  return {n:e.nome, ant, a: ant? ant.series.map(x=>serieComNumero(x)? String(x) : "") : [],
+          h: ((plan&&plan.h)||[]).concat(cargasApp).slice(-10), alt:[]};
 }
 /* substitui a % por série pela comparação do exercício inteiro */
 function pintaEvolucaoEx(i){
   const e=est[i];
   const bloco=document.querySelectorAll("#lista .ex")[i]; if(!bloco) return;
   let el=bloco.querySelector(".evo-ex");
-  const feitas=(e.series||[]).filter(x=>x!=null);
-  if(!feitas.length){ if(el) el.remove(); return; }
+  const feitas=(e.series||[]).filter(serieComNumero);
+  if(e.pulado || !feitas.length){ if(el) el.remove(); return; }
   const trab=trabalhoExercicio(feitas,e.nome), e1=melhorE1(feitas);
-  const ant=sessoesDoExercicio(e.orig||e.nome, dataSel).pop();
-  let txt='<b>'+Math.round(trab).toLocaleString("pt-BR")+' kg</b> de trabalho'+
-    (e1? ' · melhor série <b>'+String(e1).replace(".",",")+' kg</b> est.' : '');
-  if(ant && ant.trab){
-    const dT=Math.round((trab-ant.trab)/ant.trab*100);
-    const dF=ant.e1? Math.round((e1-ant.e1)/ant.e1*100) : null;
+  const reps=feitas.reduce((a,s)=>a+repsDaSerie(s),0);
+  /* só o mesmo exercício: se foi substituído, o histórico do antigo não entra na conta */
+  const ant=registroAnterior(e.nome, dataDoTreino());
+  const semCarga = trab<=0;                                   // peso do corpo (ex.: abdominal): compara repetições
+  let txt = semCarga
+    ? '<b>'+reps+'</b> repetições'
+    : '<b>'+Math.round(trab).toLocaleString("pt-BR")+' kg</b> de trabalho'+
+      (e1? ' · melhor série <b>'+String(e1).replace(".",",")+' kg</b> est.' : '');
+  /* compara só as séries que existem nos dois treinos (durante o treino, 1 série feita vale contra a 1ª da vez anterior) */
+  const m=movPorRep(e.nome);
+  const idx=ant? e.series.map((x,s)=>serieComNumero(x) && serieComNumero(ant.series[s])? s : -1).filter(s=>s>=0) : [];
+  const soma2=(f,arr)=>idx.reduce((n,s)=>n+f(arr[s]),0);
+  const A=semCarga? soma2(repsDaSerie,e.series) : soma2(s=>vol1(s)*m, e.series);
+  const B=ant? (semCarga? soma2(repsDaSerie,ant.series) : soma2(s=>vol1(s)*m, ant.series)) : 0;
+  if(ant && idx.length && B>0){
     const cor=v=> v>0? "var(--verde)" : v<0? "var(--vermelho)" : "var(--fraco)";
-    txt+='<br>vs. '+ant.iso.split("-").reverse().slice(0,2).join("/")+': '+
-      '<b style="color:'+cor(dT)+'">'+(dT>0?"+":"")+dT+'% de trabalho</b>'+
-      (dF!=null? ' · <b style="color:'+cor(dF)+'">'+(dF>0?"+":"")+dF+'% de força</b>' : '');
+    const sn=v=>(v>0?"+":"")+v;
+    const data=ant.planilha? "planilha" : ant.iso.split("-").reverse().slice(0,2).join("/");
+    const emComum = idx.length<ant.n? ' <span style="color:var(--fraco)">('+idx.length+(idx.length===1?' série':' séries')+' em comum)</span>' : '';
+    const dT=Math.round((A-B)/B*100);
+    if(semCarga){
+      txt+='<br>vs. '+data+': <b style="color:'+cor(dT)+'">'+sn(dT)+'% de repetições</b>'+emComum;
+    } else {
+      const dF=ant.e1? Math.round((e1-ant.e1)/ant.e1*100) : null;
+      txt+='<br>vs. '+data+': <b style="color:'+cor(dT)+'">'+sn(dT)+'% de trabalho</b>'+
+        (dF!=null? ' · <b style="color:'+cor(dF)+'">'+sn(dF)+'% de força</b>' : '')+emComum;
+    }
+  } else if(ant){
+    txt+='<br>última vez '+(ant.planilha? "na planilha" : "em "+ant.iso.split("-").reverse().slice(0,2).join("/"))+' (sem série correspondente ainda)';
   } else txt+='<br>primeira vez registrada';
   if(!el){ el=document.createElement("div"); el.className="evo-ex g-leg";
     el.style.cssText="padding:8px 0 0 28px;font-size:12px";
@@ -7700,13 +7871,11 @@ desenha = function(){
   est.forEach((e,i)=>{
     if(e.simples || !ehDual(e.nome)) return;
     const bloco=document.querySelectorAll("#lista .ex")[i]; if(!bloco) return;
-    const ult=ultimaSerieDual(editandoSessao||null);               // registro mais recente do exercício
     e.series.forEach((val,s)=>{
       const linha=$("l"+i+"_"+s); if(!linha || linha.dataset.dual) return;
       linha.dataset.dual="1";
       const cx=$("c"+i+"_"+s), v=partesDual(val||"");
-      let ph=partesDual(cx? cx.placeholder : "");
-      if(!leAbd(ph.s) && !leAbd(ph.i)) ph=partesDual(ult[s]||"");
+      const ph=partesDual(cx? cx.placeholder : "");           // vem do registro anterior do próprio exercício
       if(!bloco.querySelector(".cab-dual")){
         const cab=document.createElement("div"); cab.className="cab-dual";
         cab.innerHTML='<span></span><span>supra</span><span>infra</span><span></span>';
@@ -7725,10 +7894,8 @@ desenha = function(){
     });
     const cfg=bloco.querySelector(".abd-cfg span:last-child");
     if(cfg) cfg.textContent="supra à esquerda, infra à direita · 0x20 = sem peso e 20 repetições";
-    const hist=bloco.querySelector(".hist");
-    if(hist && ult.length) hist.textContent="última vez  "+ult.join(" · ");
   });
-  document.querySelectorAll("[data-md]").forEach(b=> b.onclick=()=>{
+  document.querySelectorAll("#lista .serie-dual button[data-md]").forEach(b=> b.onclick=()=>{
     const [i,s]=b.dataset.md.split("_").map(Number); confirmaDual(i,s); });
   document.querySelectorAll(".serie-dual .cx").forEach(el=> el.addEventListener("keydown",ev=>{
     if(ev.key!=="Enter") return; ev.preventDefault();
@@ -7739,6 +7906,156 @@ desenha = function(){
   }));
 };
 
+/* ================= treino: não vou fazer, trocar e adicionar exercício ================= */
+/* lista suspensa com todos os exercícios cadastrados, agrupados por músculo */
+function seletorExercicios(o){
+  const por={}, ord=(a,b)=>a.localeCompare(b,"pt-BR");
+  const esc=s=>String(s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;");
+  const op=n=>'<option value="'+esc(n)+'">'+esc(n)+'</option>';
+  CATALOGO.forEach(n=>{
+    if(o.excluir && o.excluir.has(canon(n))) return;
+    const m=metaDe(n), g=m? m[1] : grupoDoExercicio(n);
+    (por[g]=por[g]||[]).push(n);
+  });
+  let html='<option value="">Escolher exercício…</option>';
+  if(o.sugeridos && o.sugeridos.length) html+='<optgroup label="Sugeridos da ficha">'+o.sugeridos.map(op).join("")+'</optgroup>';
+  if(o.maisUsados && o.maisUsados.length) html+='<optgroup label="Mais usados por você">'+o.maisUsados.map(op).join("")+'</optgroup>';
+  Object.keys(por).sort((a,b)=> a===o.grupoPrimeiro? -1 : b===o.grupoPrimeiro? 1 : ord(a,b)).forEach(g=>{
+    html+='<optgroup label="'+esc(g)+(g===o.grupoPrimeiro? " (mesmo grupo)" : "")+'">'+por[g].sort(ord).map(op).join("")+'</optgroup>';
+  });
+  return html+'<option value="__novo">＋ Criar exercício novo…</option>';
+}
+function maisUsadosExercicios(limite, excluir){
+  const c={};
+  Object.values(DIAS).forEach(d=>{
+    const t=d.treino; if(!t || t==="descanso" || !t.detalhe) return;
+    t.detalhe.forEach(e=>{ if((e.series||[]).some(serieComNumero)){ const n=canon(e.nome); c[n]=(c[n]||0)+1; } });
+  });
+  return Object.keys(c).filter(n=>CATALOGO.includes(n) && !(excluir && excluir.has(n)))
+    .sort((a,b)=>c[b]-c[a] || a.localeCompare(b,"pt-BR")).slice(0,limite);
+}
+/* depois de criar um exercício novo, volta para a janela que pediu a criação */
+window.__retornoNovoEx=null;
+const neSalvarEx=$("neSalvar").onclick;
+$("neSalvar").onclick=function(){
+  const antes=EX_MEUS.length;
+  neSalvarEx.apply(this,arguments);
+  if(EX_MEUS.length>antes && window.__retornoNovoEx){
+    const cb=window.__retornoNovoEx; window.__retornoNovoEx=null; cb(EX_MEUS[EX_MEUS.length-1][0]);
+  }
+};
+const neCancelarEx=$("neCancelar").onclick;
+$("neCancelar").onclick=function(){ window.__retornoNovoEx=null; neCancelarEx.apply(this,arguments); };
+
+function montaJanelaExercicio(titulo, sub, selHtml, preSel, aoCriar){
+  $("folhaTit").textContent=titulo; $("folhaSub").textContent=sub;
+  const cx=$("opcoes"); cx.innerHTML="";
+  const sel=document.createElement("select"); sel.className="sel-larga"; sel.id="exSel";
+  sel.style.cssText="width:calc(100% - 40px);margin:0 20px 10px";
+  sel.innerHTML=selHtml;
+  if(preSel) sel.value=preSel;
+  sel.onchange=()=>{ if(sel.value==="__novo"){ sel.value=""; fecha(); window.__retornoNovoEx=aoCriar; abreNovoEx(""); } };
+  cx.appendChild(sel);
+  const botao=(txt,cls,fn)=>{ const b=document.createElement("button"); b.className="opt"+(cls?" "+cls:""); b.textContent=txt; b.onclick=fn; cx.appendChild(b); };
+  const escolhido=()=>{ if(!sel.value){ toast("Escolha o exercício na lista."); return null; } return sel.value; };
+  veu.classList.add("on"); folha.classList.add("on");
+  return {botao, escolhido};
+}
+/* substituir: lista suspensa + "só hoje" ou "na ficha, para sempre" */
+abre = function(i, preSel){
+  const e=est[i], f=FICHAS[fichaAtual]||{ex:[]};
+  const fx=f.ex.find(x=>canon(x.n)===canon(e.orig||e.nome)) || {};
+  const sug=[...new Set((fx.alt||[]).map(canon))].filter(n=>CATALOGO.includes(n) && canon(n)!==canon(e.nome));
+  const j=montaJanelaExercicio("No lugar de "+e.nome,
+    "Escolha o exercício na lista e diga se a troca vale só hoje ou para sempre.",
+    seletorExercicios({grupoPrimeiro:infoEx(e.orig||e.nome).g, sugeridos:sug, excluir:new Set([canon(e.nome)])}),
+    preSel, n=>abre(i,n));
+  j.botao("Trocar só hoje","",()=>{ const n=j.escolhido(); if(n) troca(i,n); });
+  j.botao("Trocar na ficha, para sempre","",()=>{ const n=j.escolhido(); if(n) trocaNaFicha(i,n); });
+  if(e.orig) j.botao("Voltar para "+e.orig,"livre",()=>troca(i,e.orig));
+};
+troca = function(i,nome){
+  const e=est[i];
+  if(e.series.some(x=>x!=null) && !confirm("Este exercício já tem séries marcadas. Trocar apaga essas séries. Continuar?")) return;
+  const origem=e.orig||e.nome;
+  if(canon(nome)===canon(origem)){ e.nome=origem; e.orig=null; } else { e.orig=origem; e.nome=nome; }
+  e.series=e.series.map(()=>null); e.pulado=false; e.t=descanso[e.nome]||90;
+  fecha(); desenha(); soma();
+};
+function trocaNaFicha(i,nome){
+  const e=est[i], f=FICHAS[fichaAtual];
+  if(!f){ troca(i,nome); return; }
+  const origem=e.orig||e.nome;
+  if(f.ex.some(x=>canon(x.n)===canon(nome) && canon(x.n)!==canon(origem))){
+    toast("“"+nome+"” já está na ficha "+fichaAtual+"."); return; }
+  if(e.series.some(x=>x!=null) && !confirm("Este exercício já tem séries marcadas. Trocar apaga essas séries. Continuar?")) return;
+  const k=f.ex.findIndex(x=>canon(x.n)===canon(origem));
+  const novo={n:nome, a:[], h:[], alt:[], ns:(k>=0 && f.ex[k].ns) || 3};
+  if(k>=0) ["rep","desc","drop"].forEach(c=>{ if(f.ex[k][c]!==undefined) novo[c]=f.ex[k][c]; });
+  if(k>=0) f.ex.splice(k,1,novo); else f.ex.push(novo);
+  e.nome=nome; e.orig=null; e.series=e.series.map(()=>null); e.pulado=false; e.t=descanso[nome]||90;
+  salvar(); fecha(); desenha(); soma();
+  toast("“"+nome+"” agora faz parte da ficha "+fichaAtual+".");
+}
+/* adicionar um exercício ao treino que está sendo feito (por exemplo, abdominal) */
+function abreAdd(preSel){
+  const ja=new Set(est.map(x=>canon(x.nome)));
+  const j=montaJanelaExercicio("Adicionar exercício",
+    "Complemente o treino de hoje, por exemplo com abdominal.",
+    seletorExercicios({maisUsados:maisUsadosExercicios(8,ja), excluir:ja}), preSel, n=>abreAdd(n));
+  j.botao("Adicionar só a este treino","",()=>{ const n=j.escolhido(); if(n) adicionaExercicio(n,false); });
+  j.botao("Adicionar também à ficha "+(fichaAtual||""),"",()=>{ const n=j.escolhido(); if(n) adicionaExercicio(n,true); });
+}
+function adicionaExercicio(nome, naFicha){
+  est.push({nome, orig:null, simples:false, pulado:false, series:[null,null,null], t:descanso[nome]||90});
+  const f=FICHAS[fichaAtual];
+  if(naFicha && f && !f.ex.some(x=>canon(x.n)===canon(nome))){ f.ex.push({n:nome, a:[], h:[], alt:[], ns:3}); salvar(); }
+  fecha(); desenha(); soma();
+  setTimeout(()=>{ const b=document.querySelectorAll("#lista .ex"); if(b.length) b[b.length-1].scrollIntoView({behavior:"smooth",block:"center"}); },80);
+  toast("“"+nome+"” adicionado"+(naFicha? " à ficha "+fichaAtual : " a este treino")+".");
+}
+const desenhaPular = desenha;
+desenha = function(){
+  desenhaPular();
+  if(!fichaAtual || !est) return;
+  const blocos=document.querySelectorAll("#lista .ex");
+  est.forEach((e,i)=>{
+    const bloco=blocos[i]; if(!bloco || e.simples || bloco.dataset.pulaOk) return;
+    bloco.dataset.pulaOk="1";
+    const cab=bloco.querySelector(".cab"); if(!cab) return;
+    cab.insertAdjacentHTML("beforeend",'<button class="trocar pular" data-pula="'+i+'">'+(e.pulado? "fazer" : "não vou fazer")+'</button>');
+    if(e.pulado){
+      bloco.classList.add("pulado");
+      cab.insertAdjacentHTML("afterend",'<div class="pulado-nota">Não vou fazer este exercício hoje. Fica registrado como não realizado.</div>');
+    }
+  });
+  document.querySelectorAll("#lista button[data-pula]").forEach(b=> b.onclick=()=>{
+    const i=+b.dataset.pula, e=est[i];
+    if(e.pulado){ e.pulado=false; desenha(); soma(); return; }
+    if(e.series.some(x=>x!=null)){ toast("Este exercício já tem séries marcadas."); return; }
+    if(timers[i] || ALVOS[i]!=null) play(i);                       // para o cronômetro dele
+    e.pulado=true; desenha(); soma();
+    toast("“"+e.nome+"” fica como não realizado hoje.", ()=>{ e.pulado=false; desenha(); soma(); });
+  });
+  const lista=$("lista");
+  if(!lista.querySelector(".add-ex")){
+    lista.insertAdjacentHTML("beforeend",'<div class="add-ex"><button id="btAddEx">+ adicionar exercício</button></div>');
+    $("btAddEx").onclick=()=>abreAdd();
+  }
+};
+/* ao entrar numa ficha, nenhum cronômetro de descanso de outro treino pode sobrar:
+   sair deixava as chaves em timers/ALVOS, e o descanso não começava sozinho nos mesmos números de exercício */
+function zeraCronometros(){
+  Object.keys(timers).forEach(k=>{ clearInterval(timers[k] && timers[k].id); delete timers[k]; });
+  Object.keys(ALVOS).forEach(k=>{ delete ALVOS[k]; });
+  soltaTela();
+}
+const abrirTreinoCr = abrirTreino;
+abrirTreino = function(L){ zeraCronometros(); abrirTreinoCr(L); };
+const retomaSessaoCr = retomaSessao;
+retomaSessao = function(){ zeraCronometros(); retomaSessaoCr(); };
+const abreEdicaoSessaoCr = abreEdicaoSessao;
+abreEdicaoSessao = function(iso){ zeraCronometros(); abreEdicaoSessaoCr(iso); };
 /* ================= abdominais: conversão dos registros antigos (uma vez por conjunto de dados) ================= */
 let abdVMem=null;                         // versão do formato dos abdominais nos dados carregados
 const estadoAbdV = estadoAtual;
@@ -7757,12 +8074,56 @@ restaurarEstado = async function(){
     Object.values(FICHAS).forEach(f=>(f.ex||[]).forEach(x=>{ if(ehDual(x.n) && !(x.a&&x.a.length)){ x.a=ult.slice(); fichas=true; } }));
   }
   abdVMem=2;
-  if(fichas || sessoes || legado){
+  finalizaCatalogo();                       // a restauração mescla o catálogo salvo (com nomes antigos): limpa de novo
+  const nomes=normalizaNomesFichas();       // fichas usam o nome mais popular de cada exercício
+  if(fichas || sessoes || legado || nomes){
     if(typeof desenhaCards==="function") desenhaCards();
     pintaHome();
     if(window.gravaAgora) await window.gravaAgora();
     if(sessoes) toast("Abdominais atualizados: supra e infra lado a lado; treinos antigos com 3 séries (supra 15, infra 10).");
   }
+};
+
+/* ================= alimentos: os mais usados primeiro, contados no histórico real de refeições ================= */
+function frequenciaAlimentos(){
+  const c={};
+  Object.values(DIAS).forEach(d=>(d.refeicoes||[]).forEach(r=>(r.itens||[]).forEach(it=>{ c[it.n]=(c[it.n]||0)+1; })));
+  Object.entries(USOS||{}).forEach(([n,v])=>{ if(v>(c[n]||0)) c[n]=v; });
+  return c;
+}
+const buscaAlimU = buscaAlim;
+buscaAlim = function(q){
+  q=(q||"").trim();
+  const freq=frequenciaAlimentos();
+  if(!q){
+    /* sem busca: só o que você já pediu, do mais ao menos usado (sem histórico, mostra a lista padrão) */
+    const usados=baseToda().filter(a=>freq[a.n]>0)
+      .sort((a,b)=>freq[b.n]-freq[a.n] || a.n.localeCompare(b.n,"pt-BR")).slice(0,14);
+    return usados.length? usados : buscaAlimU(q);
+  }
+  /* com busca: mais usados primeiro, e a relevância desempata (sem cortar antes de ordenar) */
+  const norm=s=>String(s).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+  const termos=norm(q).split(/\s+/).filter(Boolean), inteiro=norm(q);
+  const res=baseToda().filter(a=>{ const n=norm(a.n)+" "+norm(a.c||""); return termos.every(t=>n.includes(t)); });
+  const pos=a=>{ const i=norm(a.n).indexOf(inteiro); return i<0? 999 : i; };
+  res.sort((a,b)=>{
+    const fa=freq[a.n]||0, fb=freq[b.n]||0;
+    if(fa!==fb) return fb-fa;
+    if(pos(a)!==pos(b)) return pos(a)-pos(b);
+    return a.n.length-b.n.length;
+  });
+  return res.slice(0,20);
+};
+const pintaBuscaFreq2 = pintaBusca;
+pintaBusca = function(){
+  pintaBuscaFreq2();
+  const freq=frequenciaAlimentos(), q=($("qAlim").value||"").trim(), res=$("resAlim");
+  res.querySelectorAll("[data-al]").forEach(b=>{
+    const f=freq[b.querySelector(".an").textContent]||0, tag=b.querySelector(".fonte");
+    if(tag && f>=2){ tag.className="fonte f-freq"; tag.textContent="usado "+f+"×"; }
+  });
+  if(!q && res.querySelector("[data-al]") && Object.values(freq).some(v=>v>0))
+    res.insertAdjacentHTML("afterbegin",'<div class="rot" style="padding:0 0 6px">Seus mais usados</div>');
 };
 
 restaurarEstado().catch(()=>toast("Não consegui carregar todos os dados salvos."));
