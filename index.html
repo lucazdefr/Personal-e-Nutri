@@ -1290,7 +1290,7 @@ small.bom{color:var(--verde)} small.ruim{color:var(--vermelho)} small.zero{color
 <div class="folha" id="folhaNovoEx">
   <div class="puxador"></div>
   <h2 id="neTit">Criar exercício</h2>
-  <p>Ele passa a aparecer nas listas, nas substituições e no sorteio.</p>
+  <p>Ele passa a aparecer nas listas, nas substituições e no sorteio. O gasto de calorias é estimado pelo grupo muscular, pelo tipo (composto ou isolado), por ser unilateral ou não e pela carga e repetições que você anotar.</p>
   <input class="dataesc" id="neNome" placeholder="Nome do exercício" autocomplete="off">
   <div class="ce-lin"><div class="rot2">Grupo muscular</div><div class="op" id="neGrupo"></div></div>
   <div class="ce-lin"><div class="rot2">Equipamento</div><div class="op" id="neEq"></div></div>
@@ -1477,7 +1477,7 @@ Object.entries(FICHAS).forEach(([letra,f],i)=>{
 
 function abrirTreino(letra){
   fichaAtual=letra;
-  est=FICHAS[letra].ex.map(e=>({nome:e.n,orig:null,simples:!!e.simples,
+  est=((FICHAS[letra]&&FICHAS[letra].ex)||[]).map(e=>({nome:e.n,orig:null,simples:!!e.simples,   // sem ficha (treino avulso) a lista começa vazia
     series:e.simples?[null]:[null,null,null], t:descanso[e.n]||90}));
   $("tituloTreino").textContent="Treino "+letra;
   $("dataTreino").textContent=agora.toLocaleDateString("pt-BR",{day:"2-digit",month:"2-digit"});
@@ -1609,7 +1609,9 @@ function confirmar(i,s){
 
 /* o que a sessão guarda de cada exercício; "não vou fazer" fica registrado como não realizado */
 function detalheSessao(){
-  return est.map(e=>({nome:e.nome, orig:e.orig, series: e.pulado? ["NRE"] : e.series.slice()}));
+  /* exercício avulso ou adicionado só para hoje, sem nenhuma série, nunca fez parte do treino: não é gravado */
+  return est.filter(e=>!(removivel(e) && !e.series.some(x=>x!=null)))
+    .map(e=>({nome:e.nome, orig:e.orig, series: e.pulado? ["NRE"] : e.series.slice()}));
 }
 function soma(){
   let v=0,c=0;
@@ -4558,7 +4560,7 @@ function gravaSessao(){
   if(editandoSessao) return;                       // edição de sessão antiga não entra aqui
   const feitas = est.reduce((a,e)=>a+(e.series||[]).filter(x=>x!=null).length,0);
   const dados={ficha:fichaAtual, data:dataSel, inicio:inicioTreino,
-    est:est.map(e=>({nome:e.nome,orig:e.orig,simples:e.simples,pulado:!!e.pulado,series:(e.series||[]).slice(),t:e.t})),
+    est:est.map(e=>({nome:e.nome,orig:e.orig,simples:e.simples,pulado:!!e.pulado,extra:!!e.extra,series:(e.series||[]).slice(),t:e.t})),
     cardio:{...cardio}, feitas, quando:Date.now()};
   try{ localStorage.setItem("ficha:emAndamento", JSON.stringify(dados)); }catch(e){}
 }
@@ -6244,8 +6246,12 @@ const ALIAS_NOME = {
   "Supino Declinado Máquina":"Supino Declinado na Máquina",
   "Supino no Smith":"Supino Reto no Smith",
   "Crucifixo maquina":"Crucifixo na Máquina (Peck Deck)", "Crucifixo":"Crucifixo Reto com Halteres",
-  "Paralelas (Mergulho)":"Paralelas (Mergulho) para Peito",
+  "Chest Press Articulado":"Supino Reto na Máquina",
   "Cross over":"Cross Over Polia Média", "Cross Over":"Cross Over Polia Média",
+  /* "(iso)": dia avulso de academia (acompanhando um amigo); são os mesmos exercícios */
+  "Crucifixo maquina (iso)":"Crucifixo na Máquina (Peck Deck)",
+  "Supino deitado halteres (iso)":"Supino Reto com Halteres",
+  "Supino inclinado halteres (iso)":"Supino Inclinado com Halteres",
   /* costas */
   "Remada baixa com triângulo":"Remada Baixa Triângulo", "Remada Baixa Triangulo":"Remada Baixa Triângulo",
   "Remada Baixa Aberta":"Remada Baixa Pegada Aberta",
@@ -6259,6 +6265,7 @@ const ALIAS_NOME = {
   /* ombros */
   "Desenvolvimento na polia":"Desenvolvimento na Polia", "Desenvolvimento no haltere":"Desenvolvimento com Halteres",
   "Elevação Frontal na Polia Bilateral":"Elevação Frontal na Polia", "Elevação Lateral":"Elevação Lateral com Halteres",
+  "Crucifixo invertido":"Crucifixo Inverso Máquina",
   /* bíceps */
   "Rosca Direta Barra":"Rosca Direta com Barra", "Rosca Direta com Barra Reta":"Rosca Direta com Barra", "Rosca direta":"Rosca Direta com Barra",
   "Rosca Direta barra W":"Rosca Direta com Barra W", "Rosca barra W":"Rosca Direta com Barra W", "Rosca Direta Barra W":"Rosca Direta com Barra W",
@@ -6270,14 +6277,17 @@ const ALIAS_NOME = {
   "Rosca Bayesian":"Rosca Bayesian na Polia",
   "Rosca Martelo na Polia (Corda)":"Rosca Martelo na Polia",
   /* tríceps */
-  "Tríceps corda no crossover":"Tríceps Corda", "Tríceps Corda no Crossover":"Tríceps Corda",
+  "Tríceps corda no crossover":"Tríceps Corda", "Tríceps Corda no Crossover":"Tríceps Corda", "Tríceps corda (iso)":"Tríceps Corda",
   "Tríceps francês unilateral no crossover":"Tríceps Francês Unilateral no Crossover",
   "Tríceps Francês Unilateral na polia":"Tríceps Francês Unilateral no Crossover",
+  "Tríceps Francês Unilateral na polia (iso)":"Tríceps Francês Unilateral no Crossover",
   "Tríceps Testa barra W":"Tríceps Testa com Barra W", "Tríceps Testa Barra W":"Tríceps Testa com Barra W",
   "Tríceps Testa Deitado barra W":"Tríceps Testa com Barra W", "Tríceps Testa Deitado Barra W":"Tríceps Testa com Barra W",
   "Tríceps Coice (Kickback)":"Tríceps Coice com Halter (Kickback)",
   "Supino Fechado":"Supino Fechado para Tríceps",
-  "Tríceps Frances deitado com barra W":"Tríceps Francês Deitado com Barra W", "Tríceps Francês Deitado Barra W":"Tríceps Francês Deitado com Barra W",
+  "Tríceps Frances deitado com barra W":"Tríceps Testa com Barra W", "Tríceps Francês Deitado Barra W":"Tríceps Testa com Barra W",
+  "Tríceps Francês Deitado com Barra W":"Tríceps Testa com Barra W",
+  "Paralelas (Mergulho)":"Tríceps Banco (Mergulho no Banco)", "Paralelas (Mergulho) para Tríceps":"Tríceps Banco (Mergulho no Banco)",
   /* pernas e glúteos */
   "Agachamento Squat":"Agachamento no Squat", "Agachamento no Squat (Hack)":"Agachamento no Hack",
   "Agachamento Frontal":"Agachamento Frontal com Barra", "Agachamento Goblet":"Agachamento Goblet com Halter",
@@ -6310,8 +6320,7 @@ const ALIAS_META = {
   "Rosca Inversa":"Rosca Inversa com Barra",
   "Barra Fixa":"Barra Fixa Pronada",
   "Desenvolvimento com Barra":"Desenvolvimento com Barra pela Frente",
-  "Desenvolvimento com Halteres":"Desenvolvimento com Halteres Sentado",
-  "Tríceps Francês Deitado com Barra W":"Tríceps Francês com Barra W"
+  "Desenvolvimento com Halteres":"Desenvolvimento com Halteres Sentado"
 };
 const metaDe = nome => { const c=canon(nome);
   return EXS_META.find(m=>m[0]===c) || EXS_META.find(m=>m[0]===ALIAS_META[c]) || null; };
@@ -7961,24 +7970,32 @@ function montaJanelaExercicio(titulo, sub, selHtml, preSel, aoCriar){
   veu.classList.add("on"); folha.classList.add("on");
   return {botao, escolhido};
 }
+/* treino avulso: dia fora das fichas, com os exercícios escolhidos na hora (ex.: um dia de academia com um amigo) */
+const FICHA_AVULSA="Avulso";
+const ehAvulso = () => fichaAtual===FICHA_AVULSA;
+/* exercício que não pertence a uma ficha (avulso, ou adicionado só para hoje): sai do treino em vez de virar "não realizado" */
+const removivel = e => !!e.extra || ehAvulso();
 /* substituir: lista suspensa + "só hoje" ou "na ficha, para sempre" */
 abre = function(i, preSel){
-  const e=est[i], f=FICHAS[fichaAtual]||{ex:[]};
+  const e=est[i], f=FICHAS[fichaAtual]||{ex:[]}, solto=removivel(e);
   const fx=f.ex.find(x=>canon(x.n)===canon(e.orig||e.nome)) || {};
   const sug=[...new Set((fx.alt||[]).map(canon))].filter(n=>CATALOGO.includes(n) && canon(n)!==canon(e.nome));
   const j=montaJanelaExercicio("No lugar de "+e.nome,
-    "Escolha o exercício na lista e diga se a troca vale só hoje ou para sempre.",
+    solto? "Escolha na lista o exercício que entra no lugar." : "Escolha o exercício na lista e diga se a troca vale só hoje ou para sempre.",
     seletorExercicios({grupoPrimeiro:infoEx(e.orig||e.nome).g, sugeridos:sug, excluir:new Set([canon(e.nome)])}),
     preSel, n=>abre(i,n));
-  j.botao("Trocar só hoje","",()=>{ const n=j.escolhido(); if(n) troca(i,n); });
-  j.botao("Trocar na ficha, para sempre","",()=>{ const n=j.escolhido(); if(n) trocaNaFicha(i,n); });
+  j.botao(solto? "Trocar" : "Trocar só hoje","",()=>{ const n=j.escolhido(); if(n) troca(i,n); });
+  if(!solto) j.botao("Trocar na ficha, para sempre","",()=>{ const n=j.escolhido(); if(n) trocaNaFicha(i,n); });
   if(e.orig) j.botao("Voltar para "+e.orig,"livre",()=>troca(i,e.orig));
 };
 troca = function(i,nome){
   const e=est[i];
   if(e.series.some(x=>x!=null) && !confirm("Este exercício já tem séries marcadas. Trocar apaga essas séries. Continuar?")) return;
-  const origem=e.orig||e.nome;
-  if(canon(nome)===canon(origem)){ e.nome=origem; e.orig=null; } else { e.orig=origem; e.nome=nome; }
+  if(removivel(e)){ e.nome=nome; e.orig=null; }                    // não existe exercício "original" para comparar
+  else {
+    const origem=e.orig||e.nome;
+    if(canon(nome)===canon(origem)){ e.nome=origem; e.orig=null; } else { e.orig=origem; e.nome=nome; }
+  }
   e.series=e.series.map(()=>null); e.pulado=false; e.t=descanso[e.nome]||90;
   fecha(); desenha(); soma();
 };
@@ -7993,26 +8010,28 @@ function trocaNaFicha(i,nome){
   const novo={n:nome, a:[], h:[], alt:[], ns:(k>=0 && f.ex[k].ns) || 3};
   if(k>=0) ["rep","desc","drop"].forEach(c=>{ if(f.ex[k][c]!==undefined) novo[c]=f.ex[k][c]; });
   if(k>=0) f.ex.splice(k,1,novo); else f.ex.push(novo);
-  e.nome=nome; e.orig=null; e.series=e.series.map(()=>null); e.pulado=false; e.t=descanso[nome]||90;
+  e.nome=nome; e.orig=null; e.extra=false; e.series=e.series.map(()=>null); e.pulado=false; e.t=descanso[nome]||90;
   salvar(); fecha(); desenha(); soma();
   toast("“"+nome+"” agora faz parte da ficha "+fichaAtual+".");
 }
 /* adicionar um exercício ao treino que está sendo feito (por exemplo, abdominal) */
 function abreAdd(preSel){
-  const ja=new Set(est.map(x=>canon(x.nome)));
+  const ja=new Set(est.map(x=>canon(x.nome))), temFicha=!!FICHAS[fichaAtual];
   const j=montaJanelaExercicio("Adicionar exercício",
-    "Complemente o treino de hoje, por exemplo com abdominal.",
+    temFicha? "Complemente o treino de hoje, por exemplo com abdominal." : "Escolha qualquer exercício do catálogo ou crie um novo.",
     seletorExercicios({maisUsados:maisUsadosExercicios(8,ja), excluir:ja}), preSel, n=>abreAdd(n));
-  j.botao("Adicionar só a este treino","",()=>{ const n=j.escolhido(); if(n) adicionaExercicio(n,false); });
-  j.botao("Adicionar também à ficha "+(fichaAtual||""),"",()=>{ const n=j.escolhido(); if(n) adicionaExercicio(n,true); });
+  if(temFicha){
+    j.botao("Adicionar só a este treino","",()=>{ const n=j.escolhido(); if(n) adicionaExercicio(n,false); });
+    j.botao("Adicionar também à ficha "+fichaAtual,"",()=>{ const n=j.escolhido(); if(n) adicionaExercicio(n,true); });
+  } else j.botao("Adicionar ao treino","",()=>{ const n=j.escolhido(); if(n) adicionaExercicio(n,false); });
 }
 function adicionaExercicio(nome, naFicha){
-  est.push({nome, orig:null, simples:false, pulado:false, series:[null,null,null], t:descanso[nome]||90});
+  est.push({nome, orig:null, simples:false, pulado:false, extra:!naFicha, series:[null,null,null], t:descanso[nome]||90});
   const f=FICHAS[fichaAtual];
   if(naFicha && f && !f.ex.some(x=>canon(x.n)===canon(nome))){ f.ex.push({n:nome, a:[], h:[], alt:[], ns:3}); salvar(); }
   fecha(); desenha(); soma();
   setTimeout(()=>{ const b=document.querySelectorAll("#lista .ex"); if(b.length) b[b.length-1].scrollIntoView({behavior:"smooth",block:"center"}); },80);
-  toast("“"+nome+"” adicionado"+(naFicha? " à ficha "+fichaAtual : " a este treino")+".");
+  toast("“"+nome+"” adicionado"+(naFicha? " à ficha "+fichaAtual : (f? " a este treino" : ""))+".");
 }
 const desenhaPular = desenha;
 desenha = function(){
@@ -8023,14 +8042,22 @@ desenha = function(){
     const bloco=blocos[i]; if(!bloco || e.simples || bloco.dataset.pulaOk) return;
     bloco.dataset.pulaOk="1";
     const cab=bloco.querySelector(".cab"); if(!cab) return;
-    cab.insertAdjacentHTML("beforeend",'<button class="trocar pular" data-pula="'+i+'">'+(e.pulado? "fazer" : "não vou fazer")+'</button>');
-    if(e.pulado){
+    const sai=removivel(e);
+    cab.insertAdjacentHTML("beforeend",'<button class="trocar pular" data-pula="'+i+'">'+(sai? "remover" : e.pulado? "fazer" : "não vou fazer")+'</button>');
+    if(e.pulado && !sai){
       bloco.classList.add("pulado");
       cab.insertAdjacentHTML("afterend",'<div class="pulado-nota">Não vou fazer este exercício hoje. Fica registrado como não realizado.</div>');
     }
   });
   document.querySelectorAll("#lista button[data-pula]").forEach(b=> b.onclick=()=>{
     const i=+b.dataset.pula, e=est[i];
+    if(removivel(e)){
+      if(e.series.some(x=>x!=null)){ toast("Já tem séries marcadas. Desmarque as séries para tirar o exercício."); return; }
+      zeraCronometros();                                             // os números dos exercícios mudam de lugar
+      est.splice(i,1); desenha(); soma();
+      toast("“"+e.nome+"” saiu do treino.", ()=>{ est.splice(i,0,e); desenha(); soma(); });
+      return;
+    }
     if(e.pulado){ e.pulado=false; desenha(); soma(); return; }
     if(e.series.some(x=>x!=null)){ toast("Este exercício já tem séries marcadas."); return; }
     if(timers[i] || ALVOS[i]!=null) play(i);                       // para o cronômetro dele
@@ -8038,6 +8065,8 @@ desenha = function(){
     toast("“"+e.nome+"” fica como não realizado hoje.", ()=>{ e.pulado=false; desenha(); soma(); });
   });
   const lista=$("lista");
+  if(ehAvulso() && !est.length)
+    lista.insertAdjacentHTML("afterbegin",'<div class="vazio">Treino avulso: toque em “+ adicionar exercício” e escolha o que vai fazer.</div>');
   if(!lista.querySelector(".add-ex")){
     lista.insertAdjacentHTML("beforeend",'<div class="add-ex"><button id="btAddEx">+ adicionar exercício</button></div>');
     $("btAddEx").onclick=()=>abreAdd();
@@ -8056,6 +8085,75 @@ const retomaSessaoCr = retomaSessao;
 retomaSessao = function(){ zeraCronometros(); retomaSessaoCr(); };
 const abreEdicaoSessaoCr = abreEdicaoSessao;
 abreEdicaoSessao = function(iso){ zeraCronometros(); abreEdicaoSessaoCr(iso); };
+
+/* ===== entradas do treino avulso ===== */
+/* abre o registro do dia (hoje ou outro) para acrescentar exercícios que não são de nenhuma ficha */
+function acrescentaAvulso(iso){
+  abreEdicaoSessao(iso);
+  if(fichaAtual==="Cardio"){ fichaAtual=FICHA_AVULSA; $("tituloTreino").textContent="Treino Avulso"; desenha(); }
+  abreAdd();
+}
+function abrirAvulso(){
+  const t=dia.treino;
+  if(t && t!=="descanso" && ((t.detalhe||[]).length || t.cardio)){
+    const rot = t.ficha==="Cardio"? "o cardio" : "o Treino "+t.ficha;
+    if(!confirm("Este dia já tem "+rot+" registrado. Quer abrir esse registro para acrescentar os exercícios avulsos?")) return;
+    acrescentaAvulso(dataSel); return;
+  }
+  abrirTreino(FICHA_AVULSA); abreAdd();
+}
+(function(){
+  const b=document.createElement("button");
+  b.className="nova-ficha"; b.style.cssText="width:100%;margin:9px 0 0";
+  b.textContent="Treino avulso (escolher os exercícios)";
+  b.onclick=abrirAvulso;
+  const cardioBt=[...document.querySelectorAll("button.nova-ficha")].find(x=>/só cardio/i.test(x.textContent));
+  const alvo=cardioBt||$("criarFicha");
+  alvo.parentNode.insertBefore(b, alvo);
+})();
+const htNovoAv=$("htNovo").onclick;
+$("htNovo").onclick=function(){
+  htNovoAv.apply(this,arguments);
+  const c=$("escFicha");
+  c.insertAdjacentHTML("beforeend",'<button class="so-cardio" data-av="1">Treino avulso (outros exercícios)</button>');
+  c.querySelector("[data-av]").onclick=()=>{
+    const iso=$("dtNovo").value || dataSel;
+    if(iso>HOJE_ISO){ toast("Não dá para lançar em data futura."); return; }
+    if(!DIAS[iso]) DIAS[iso]=diaVazio();
+    const t=DIAS[iso].treino;
+    fechaNovoT();
+    if(!t || t==="descanso") DIAS[iso].treino={ficha:FICHA_AVULSA,kcal:0,series:0,cardio:null,detalhe:[]};
+    else toast("Este dia já tem um treino registrado: os exercícios entram nele.");
+    acrescentaAvulso(iso);
+  };
+};
+/* sair de um treino avulso vazio não deixa nada para trás */
+const voltarAvulso=$("voltar").onclick;
+$("voltar").onclick=function(){
+  const iso=editandoSessao;
+  if(iso){
+    const t=DIAS[iso] && DIAS[iso].treino;
+    if(t && t!=="descanso" && t.ficha===FICHA_AVULSA && !(t.detalhe||[]).length && !t.cardio){ DIAS[iso].treino=null; salvar(); }
+  } else if(ehAvulso() && !est.length) limpaSessao();
+  voltarAvulso.apply(this,arguments);
+  if(iso){ pintaHistorico(); pintaHome(); } else pintaRetomar();
+};
+const fimAvulso=$("fim").onclick;
+$("fim").onclick=function(){
+  if(ehAvulso() && !est.length){ toast("Adicione ao menos um exercício."); return; }
+  fimAvulso.apply(this,arguments);
+};
+
+/* a caminhada "pouca" já está na base do dia (TMB × 1,15, igual a não marcar nada); média e alta somam a diferença */
+const pintaMarcadoresCam = pintaMarcadores;
+pintaMarcadores = function(){
+  pintaMarcadoresCam();
+  const t=tmb(); if(!t) return;
+  const linha=[...$("marcadores").children].find(d=>/Caminhada/.test(d.textContent));
+  if(linha) linha.insertAdjacentHTML("beforeend",'<div style="font-size:11.5px;color:var(--fraco);padding:7px 2px 0;line-height:1.4">'+
+    'Pouca já está na base do dia (TMB × 1,15). Média soma 10% da TMB (≈ +'+Math.round(t*0.10).toLocaleString("pt-BR")+
+    ' kcal) e Alta soma 20% (≈ +'+Math.round(t*0.20).toLocaleString("pt-BR")+' kcal).</div>');
+};
 /* ================= abdominais: conversão dos registros antigos (uma vez por conjunto de dados) ================= */
 let abdVMem=null;                         // versão do formato dos abdominais nos dados carregados
 const estadoAbdV = estadoAtual;
