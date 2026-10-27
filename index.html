@@ -868,6 +868,44 @@ small.bom{color:var(--verde)} small.ruim{color:var(--vermelho)} small.zero{color
 .add-ex button{width:100%;background:none;border:1px dashed var(--linha2);color:var(--medio);border-radius:11px;padding:13px;font-size:14px}
 .add-ex button:active{border-color:var(--brasa);color:var(--brasa)}
 
+.trava{position:fixed;left:12px;right:12px;top:calc(10px + env(safe-area-inset-top));z-index:60;
+  display:flex;align-items:center;gap:10px;background:#2B1414;border:1px solid #4A1F1F;border-radius:11px;
+  padding:12px 13px;font-size:13px;line-height:1.45;color:var(--texto)}
+.trava span{flex:1}
+.trava button{flex:none;background:var(--brasa);border:0;border-radius:8px;color:#1A1200;font-weight:700;
+  font-size:13px;padding:9px 12px}
+.atrasado{color:var(--brasa)}
+.pers{display:flex;flex-direction:column;gap:6px;padding:4px 20px 10px}
+.pers button{display:flex;justify-content:space-between;align-items:baseline;gap:10px;background:none;
+  border:1px solid var(--linha2);border-radius:10px;padding:11px 13px;font-size:14px;color:var(--texto);text-align:left}
+.pers button small{font-size:12px;color:var(--fraco);font-variant-numeric:tabular-nums}
+.pers button small.kc-mais{color:var(--vermelho)}
+.pers button small.kc-menos{color:var(--verde)}
+.pers button.on{border-color:transparent;background:var(--brasa);color:#1A1200;font-weight:600}
+.pers button.on small{color:#4A3A10}
+.marc .ajuste-esp{display:flex;align-items:center;gap:12px;margin-top:10px;font-size:13px;color:var(--fraco)}
+.marc .ajuste-esp b{color:var(--texto);font-size:15px;font-variant-numeric:tabular-nums}
+.marc .ajuste-esp button{width:38px;height:34px;border-radius:9px;padding:0;font-size:17px;line-height:1;color:var(--texto)}
+.marc .nota-marc{font-size:11.5px;color:var(--fraco);padding:7px 2px 0;line-height:1.4}
+.marc .desligada button{opacity:.45}
+.perfil-op{display:flex;gap:6px}
+.perfil-op button{background:none;border:1px solid var(--linha2);border-radius:18px;padding:7px 12px;
+  font-size:12.5px;color:var(--fraco)}
+.perfil-op button.on{border-color:transparent;background:var(--brasa);color:#1A1200;font-weight:600}
+.periodo.p2{padding-top:0}
+.per-datas{display:flex;gap:9px;padding:4px 20px 8px}
+.per-datas label{flex:1;min-width:0;font-size:12px;color:var(--fraco)}
+.per-datas input{display:block;width:100%;margin-top:5px;background:var(--sub);border:1px solid var(--linha2);
+  border-radius:9px;color:var(--texto);font-size:14px;padding:9px 10px;font-family:inherit;outline:none;color-scheme:dark}
+.per-datas input:focus{border-color:var(--brasa)}
+.mover{display:flex;gap:6px;flex:none;align-self:center;margin-left:auto}
+.mover button{width:36px;height:34px;border-radius:8px;border:1px solid var(--linha2);background:none;
+  color:var(--medio);font-size:15px;line-height:1;padding:0}
+.mover button:disabled{opacity:.25}
+.mover button:active{border-color:var(--brasa);color:var(--brasa)}
+.ex.movido{animation:movido 1s ease-out}
+@keyframes movido{from{background:#2A2110}to{background:transparent}}
+
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -1049,6 +1087,7 @@ small.bom{color:var(--verde)} small.ruim{color:var(--vermelho)} small.zero{color
   <div class="perfil-linha"><span>Sexo</span><input id="pSexo" placeholder="masculino ou feminino" autocomplete="off"></div>
   <div class="perfil-linha"><span>Peso atual</span><input id="pPeso" disabled></div>
   <div class="perfil-linha"><span>TMB</span><input id="pTMB" disabled></div>
+  <div class="perfil-linha"><span>Mounjaro</span><div class="perfil-op" id="pMounjaro"></div></div>
   <div class="acoes-perfil">
     <button id="btBackup">Salvar backup<small>gera um arquivo com tudo que você registrou</small></button>
     <button id="btRestaurar">Restaurar backup<small>traz os dados de um arquivo; mostra o que vai mudar antes de confirmar</small></button>
@@ -1151,6 +1190,11 @@ small.bom{color:var(--verde)} small.ruim{color:var(--vermelho)} small.zero{color
     <button data-per="7">7 dias</button>
     <button data-per="30" class="on">30 dias</button>
     <button data-per="0">Desde o início</button>
+  </div>
+  <div class="periodo p2"><button id="perPers">Intervalo personalizado</button></div>
+  <div class="per-datas oculto" id="perDatas">
+    <label>de<input type="date" id="perIni"></label>
+    <label>até<input type="date" id="perFim"></label>
   </div>
   <div class="painel" id="pnCorpo"></div>
 </div>
@@ -1907,7 +1951,7 @@ const TIPOS = ["Café da manhã","Almoço","Sobremesa","Café da tarde","Janta",
                "Café da noite","Refeição extra","Beliscada"];
 
 let dia = {refeicoes:[], creatina:null, agua:null, caminhada:null, mounjaro:null,
-           fora:false, treino:null, encerrado:false, pelada:null};
+           fora:false, treino:null, encerrado:false, esporte:null};
 
 function idade(){
   if(!PERFIL.nasc) return 0;
@@ -2029,8 +2073,7 @@ const MARCADORES=[
   {k:"creatina", rot:"Creatina", ops:[["sim","Tomei"],["nao","Não tomei"]]},
   {k:"agua", rot:"Água", ops:[["pouca","Pouca"],["media","Média"],["muita","Muita"]]},
   {k:"caminhada", rot:"Caminhada (fora do cardio)", ops:[["pouca","Pouca"],["media","Média"],["alta","Alta"]]},
-  {k:"mounjaro", rot:"Mounjaro", ops:[["sim","Apliquei"],["nao","Não apliquei"]]},
-  {k:"pelada", rot:"Joguei pelada hoje? (goleiro, society, ~1h45)", ops:[["sim","Joguei"],["nao","Não joguei"]]}
+  {k:"mounjaro", rot:"Mounjaro", ops:[["sim","Apliquei"],["nao","Não apliquei"]]}
 ];
 function pintaMarcadores(){
   const c=$("marcadores"); c.innerHTML="";
@@ -2085,7 +2128,7 @@ function pintaNutri(){
   $("nMini").textContent = (tmb()? "TMB "+tmb().toLocaleString("pt-BR") : "TMB indisponível (complete o perfil e registre o peso)")+
     " · atividade do dia "+g.base.toLocaleString("pt-BR")+
     (g.treino? " + treino "+g.treino.toLocaleString("pt-BR") : "")+
-    (g.pelada? " + pelada (estimativa) "+g.pelada.toLocaleString("pt-BR") : "")+" kcal";
+    (g.esporte? " + esporte "+g.esporte.toLocaleString("pt-BR") : "")+" kcal";
 }
 $("encerrarDia").onclick=()=>{
   if(!dia.treino){ alert("Informe se houve treino ou descanso antes de encerrar o dia.");
@@ -2390,7 +2433,7 @@ function numeroDoDia(iso){
 let dataSel = HOJE_ISO;
 const DIAS = {};
 function diaVazio(){ return {refeicoes:[], creatina:null, agua:null, caminhada:null,
-  mounjaro:null, dose:null, fora:false, treino:null, encerrado:false, peso:null, pelada:null}; }
+  mounjaro:null, dose:null, fora:false, treino:null, encerrado:false, peso:null, esporte:null}; }
 function carrega(iso){ if(!DIAS[iso]) DIAS[iso]=diaVazio(); dia=DIAS[iso]; pesoHoje=dia.peso; }
 carrega(HOJE_ISO);
 
@@ -3332,7 +3375,8 @@ const pintaBuscaOff = pintaBusca;
 pintaBusca = function(){ pintaBuscaOff(); pintaBlocoOff(); };
 
 /* ================= painel de desempenho ================= */
-let periodo=30;
+let periodo=30;                 // dias para trás; 0 = desde o início; "p" = intervalo personalizado
+let perIni=null, perFim=null;   // datas do intervalo personalizado
 function diasDoPeriodo(){
   const ent=Object.entries(DIAS).sort((a,b)=>a[0]<b[0]?-1:1);
   if(!periodo) return ent;
@@ -3869,7 +3913,7 @@ textoTreino = function(){
 function diaTemConteudo(d){
   if(!d) return false;
   return !!((d.refeicoes&&d.refeicoes.length) || d.treino || d.peso ||
-            d.creatina || d.agua || d.caminhada || d.mounjaro || d.pelada || d.fora || d.encerrado);
+            d.creatina || d.agua || d.caminhada || d.mounjaro || d.esporte || d.pelada || d.fora || d.encerrado);
 }
 /* limpa dias vazios antes de gravar */
 const salvarLimpo = salvar;
@@ -3892,11 +3936,16 @@ diasDoPeriodo = function(){
   const ent=Object.entries(DIAS)
     .filter(([,d])=>diaTemConteudo(d))
     .sort((a,b)=>a[0]<b[0]?-1:1);
+  if(periodo==="p") return ent.filter(([d])=>d>=perIni && d<=perFim);
   if(!periodo) return ent;
   const lim=new Date(); lim.setDate(lim.getDate()-periodo+1);
   const iso=isoLocal(lim);
   return ent.filter(([d])=>d>=iso);
 };
+function diasNoIntervalo(){
+  const [a1,m1,d1]=perIni.split("-").map(Number), [a2,m2,d2]=perFim.split("-").map(Number);
+  return Math.round((Date.UTC(a2,m2-1,d2)-Date.UTC(a1,m1-1,d1))/86400000)+1;
+}
 
 /* rótulo honesto do período */
 const pintaPainelU = pintaPainel;
@@ -3909,12 +3958,13 @@ pintaPainel = function(){
     const n=ent.length;
     alvo.textContent = "Constância em "+n+" dia"+(n===1?"":"s")+" com registro";
   }
-  if(ent.length && ent.length < (periodo||9999)){
+  const total = periodo==="p"? diasNoIntervalo() : periodo;
+  if(ent.length && ent.length < (total||9999)){
     const aviso=document.createElement("div");
     aviso.className="mini";
     aviso.style.cssText="padding:2px 2px 14px;line-height:1.6";
     aviso.innerHTML="Você tem <b style='color:var(--texto)'>"+ent.length+" dia(s)</b> com registro"+
-      (periodo? " dentro dos últimos "+periodo+" dias":"")+
+      (periodo==="p"? " entre "+dtBr(perIni)+" e "+dtBr(perFim) : periodo? " dentro dos últimos "+periodo+" dias":"")+
       ". Os números acima somam só esses dias — dias sem registro não entram na conta.";
     c.insertBefore(aviso, c.firstChild);
   }
@@ -3934,29 +3984,59 @@ comparaMes = function(){
 
 /* ================= salvamento automático à prova de falhas =================
    Não depende de nenhuma função de tela: vigia o estado e grava quando muda. */
+/* só grava depois que os dados salvos terminam de carregar: gravar antes apagava o que ainda não tinha
+   sido lido (catálogo de produtos, medições, exercícios próprios). E nunca grava por cima do que outra
+   janela do app salvou depois que esta abriu (app instalado e aba do navegador ao mesmo tempo). */
+let dadosCarregados=false, gravacaoParada=null;      // null, "outra" (outra janela salvou), "falha" ou "apagando"
+const CHAVE_VERSAO="ficha:versao";
+let minhaVersao=null;
+function versaoSalva(){ try{ return localStorage.getItem(CHAVE_VERSAO); }catch(e){ return minhaVersao; } }
+function marcaVersao(){
+  minhaVersao=Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+  try{ localStorage.setItem(CHAVE_VERSAO, minhaVersao); }catch(e){}
+}
+function paraGravacao(motivo){
+  if(gravacaoParada) return;
+  gravacaoParada=motivo;
+  const d=document.createElement("div"); d.className="trava";
+  d.innerHTML = motivo==="outra"
+    ? "<span><b>O app foi usado em outra janela.</b> Para não apagar o que foi registrado lá, esta janela parou de salvar.</span>"
+    : "<span><b>Não consegui carregar todos os seus dados.</b> Para não gravar nada incompleto por cima deles, o app parou de salvar.</span>";
+  d.insertAdjacentHTML("beforeend",'<button>Recarregar</button>');
+  d.querySelector("button").onclick=()=>location.reload();
+  document.body.appendChild(d);
+}
+window.addEventListener("storage", e=>{
+  if(e.key===CHAVE_VERSAO && dadosCarregados && e.newValue!==minhaVersao) paraGravacao("outra");
+});
+document.addEventListener("visibilitychange", ()=>{
+  if(!document.hidden && gravacaoParada==="outra") location.reload();   // ao voltar, mostra o que a outra janela salvou
+});
 (function(){
   let ultimo=null, gravando=false;
   function instantaneo(){
     try{ return JSON.stringify(estadoAtual()); }catch(e){ return null; }
   }
   async function grava(forcado){
-    if(gravando) return;
+    if(gravando || !dadosCarregados || gravacaoParada) return;
+    if(versaoSalva()!==minhaVersao){ paraGravacao("outra"); return; }
     const agora=instantaneo();
     if(agora===null) return;
     if(!forcado && agora===ultimo) return;
     gravando=true;
-    let escrito=null;
+    let escrito=null, ok=false;
     try{
       Object.keys(DIAS).forEach(iso=>{
         if(iso!==dataSel && !diaTemConteudo(DIAS[iso])) delete DIAS[iso];
       });
       escrito=instantaneo();                       // é exatamente isto que vai para o banco
       await BD.set("estado", JSON.parse(escrito));
-      ultimo=escrito;
+      ultimo=escrito; ok=true;
     }catch(e){
-      try{ escrito=instantaneo(); localStorage.setItem("ficha:estado", escrito); ultimo=escrito; }
+      try{ escrito=instantaneo(); localStorage.setItem("ficha:estado", escrito); ultimo=escrito; ok=true; }
       catch(x){ if(typeof toast==="function") toast("Não consegui salvar neste aparelho."); }
     }
+    if(ok){ marcaVersao(); copiaCatalogo(); }
     gravando=false;
     /* se algo mudou enquanto gravava, grava de novo */
     if(instantaneo()!==ultimo) setTimeout(()=>grava(false), 50);
@@ -5290,7 +5370,8 @@ function pintaPendencias(){
   c.querySelectorAll("[data-px]").forEach(b=> b.onclick=()=>{
     const x=p[+b.dataset.px];
     x.fechar(); pintaPendencias(); pintaHome();
-    toast(x.k.startsWith("dia")? "Dia encerrado como estava." : "Pendência descartada.");
+    toast(x.k.startsWith("dia")? "Dia encerrado como estava." :
+          x.k==="backup"? "Lembrete adiado por uma semana." : "Pendência descartada.");
   });
 }
 const homeP = pintaHome;
@@ -5298,6 +5379,8 @@ pintaHome = function(){ homeP(); if(typeof pintaPendencias==="function") pintaPe
 pintaPendencias();
 
 /* ================= modos de registro do dia ================= */
+/* o consumo estimado parte do gasto base do dia (TMB × 1,15, o dia sem atividade): caminhada, treino e
+   esporte entram só no gasto. Antes ele seguia o gasto total, e cada atividade subia o consumo junto. */
 const NIVEIS = [
  {n:1, f:0.70, r:"Bem abaixo do normal"},
  {n:2, f:0.85, r:"Abaixo do normal"},
@@ -5307,17 +5390,33 @@ const NIVEIS = [
  {n:6, f:1.50, r:"Pé na jaca"},
  {n:7, f:2.00, r:"Pé na jaca sem freio"}
 ];
-const TIPOS_RAP = [
- {t:1, d:-1000, r:"Déficit forte", s:"-1.000 kcal"},
- {t:2, d:-400,  r:"Déficit leve",  s:"-400 kcal"},
- {t:3, d:0,     r:"Empate",        s:"0 kcal"},
- {t:4, d:300,   r:"Superávit",     s:"+300 kcal"}
+/* modo rápido: a personalidade do dia soma ao gasto base */
+const PERSONALIDADE = [
+ {p:1, d:2000,  r:"Péssimo"},
+ {p:2, d:1000,  r:"Muito ruim"},
+ {p:3, d:500,   r:"Ruim"},
+ {p:4, d:0,     r:"Médio"},
+ {p:5, d:-350,  r:"Bom"},
+ {p:6, d:-750,  r:"Muito bom"},
+ {p:7, d:-1050, r:"Excelente"}
 ];
+const TIPOS_RAP_ANTIGOS = {1:-1000, 2:-400, 3:0, 4:300};   // modo rápido antigo: dias registrados antes continuam valendo
 const PROT3 = [{k:"baixa", g:80, r:"Baixa (~80 g)"},
-               {k:"media", g:120, r:"Média (~120 g)"},
-               {k:"alta",  g:170, r:"Alta (~170 g)"}];
+               {k:"media", g:110, r:"Média (~110 g)"},
+               {k:"alta",  g:150, r:"Alta (~150 g)"}];
 
-function gastoBase(){ return gastoDia().total; }
+/* gasto base: o dia sem caminhada extra, treino ou esporte, com o peso daquele dia (não o de hoje) */
+function gastoBase(){
+  const pk=dia.peso || pesoNaData(dataSel) || (medicaoPara(dataSel)||{}).peso;
+  return pk? Math.round(tmbDe(dataSel,pk)*1.15) : 0;
+}
+function deltaRapido(e){
+  const x=PERSONALIDADE.find(o=>o.p===e.pers);
+  if(x) return x.d;
+  return TIPOS_RAP_ANTIGOS[e.tipo]!=null? TIPOS_RAP_ANTIGOS[e.tipo] : 0;
+}
+const nomeRapido = e => (PERSONALIDADE.find(o=>o.p===e.pers)||{r:"registro antigo"}).r;
+const comSinal = n => (n>0?"+":"")+Math.round(n).toLocaleString("pt-BR");
 function aplicaEstimativa(){
   const e=dia.estimado; if(!e) return;
   const g=gastoBase();
@@ -5325,10 +5424,7 @@ function aplicaEstimativa(){
   if(e.modo==="viagem"){
     const n=NIVEIS.find(x=>x.n===e.nivel)||NIVEIS[3];
     kcal=Math.round(g*n.f);
-  } else {
-    const t=TIPOS_RAP.find(x=>x.t===e.tipo)||TIPOS_RAP[2];
-    kcal=Math.max(0, g+t.d);
-  }
+  } else kcal=Math.max(0, g+deltaRapido(e));
   e.kcal=kcal;
   e.prot=(PROT3.find(p=>p.k===e.prot3)||{}).g || null;
 }
@@ -5348,7 +5444,7 @@ function trocaModo(novo){
   if(novo===atual) return;
   if(novo!=="dia" && dia.refeicoes.length){
     if(!confirm("Você já registrou "+dia.refeicoes.length+" refeição(ões) neste dia.\n"+
-      "Mudar para o modo "+(novo==="viagem"?"viagem":"rapido")+" descarta esses registros.\n\nDescartar?")) return;
+      "Mudar para o modo "+(novo==="viagem"?"viagem":"rápido")+" descarta esses registros.\n\nDescartar?")) return;
     const guardadas=dia.refeicoes.slice();
     dia.refeicoes=[];
     toast("Refeições descartadas.", ()=>{ dia.refeicoes=guardadas; dia.estimado=null; pintaNutri(); });
@@ -5357,7 +5453,7 @@ function trocaModo(novo){
     const e=dia.estimado; dia.estimado=null;
     if(e) toast("Voltou para registro por refeição.", ()=>{ dia.estimado=e; pintaNutri(); });
   } else {
-    dia.estimado={modo:novo, nivel:4, tipo:2, prot3:null};
+    dia.estimado={modo:novo, nivel:4, pers:4, prot3:null};
   }
   salvar(); pintaNutri();
 }
@@ -5374,31 +5470,38 @@ function pintaCorpoModo(){
   if(caixaRef) caixaRef.classList.add("oculto");
   if($("listaRef")) $("listaRef").classList.add("oculto");
   aplicaEstimativa();
-  const g=gastoBase(), saldo=(e.kcal||0)-g;
+  const g=gastoBase(), gd=gastoDia(), saldo=(e.kcal||0)-gd.total;
   let html="";
   if(e.modo==="viagem"){
     const n=NIVEIS.find(x=>x.n===e.nivel)||NIVEIS[3];
     html='<div class="esc7">'+NIVEIS.map(x=>'<button data-nv="'+x.n+'"'+
         (e.nivel===x.n?' class="on"':'')+'>'+x.n+'</button>').join("")+'</div>'+
-      '<div class="esc-leg"><b>'+n.r+'</b><br>'+Math.round(n.f*100)+'% do gasto do dia · estimado em <b>'+
-      (e.kcal||0).toLocaleString("pt-BR")+' kcal</b></div>';
+      '<div class="esc-leg"><b>'+n.r+'</b><br>'+Math.round(n.f*100)+'% do gasto base ('+g.toLocaleString("pt-BR")+
+      ' kcal, o dia sem atividade) · estimado em <b>'+(e.kcal||0).toLocaleString("pt-BR")+' kcal</b></div>';
   } else {
-    html='<div class="tipos">'+TIPOS_RAP.map(x=>'<button data-tp="'+x.t+'"'+
-        (e.tipo===x.t?' class="on"':'')+'>Tipo '+x.t+'<small>'+x.r+' · '+x.s+'</small></button>').join("")+
-      '</div><div class="esc-leg">Gasto do dia <b>'+g.toLocaleString("pt-BR")+
-      '</b> · consumo estimado <b>'+(e.kcal||0).toLocaleString("pt-BR")+' kcal</b></div>';
+    const antigo = !PERSONALIDADE.some(o=>o.p===e.pers) && TIPOS_RAP_ANTIGOS[e.tipo]!=null;
+    html='<div class="esc-leg" style="padding-bottom:6px">Personalidade do dia</div>'+
+      '<div class="pers">'+PERSONALIDADE.map(x=>'<button data-ps="'+x.p+'"'+(e.pers===x.p?' class="on"':'')+'>'+
+        '<span>'+x.r+'</span><small class="'+(x.d>0?"kc-mais":x.d<0?"kc-menos":"")+'">'+comSinal(x.d)+' kcal</small></button>').join("")+
+      '</div>'+
+      (antigo? '<div class="esc-leg">Registro antigo do modo rápido: <b>'+comSinal(TIPOS_RAP_ANTIGOS[e.tipo])+
+        ' kcal</b> sobre o gasto base. Toque numa opção para trocar.</div>' : '')+
+      '<div class="esc-leg">Gasto base <b>'+g.toLocaleString("pt-BR")+'</b> (o dia sem atividade) · consumo estimado <b>'+
+        (e.kcal||0).toLocaleString("pt-BR")+' kcal</b></div>';
   }
   html+='<div class="esc-leg" style="padding-bottom:6px">Proteína aproximada (opcional)</div>'+
     '<div class="prot3">'+PROT3.map(p=>'<button data-pr="'+p.k+'"'+
       (e.prot3===p.k?' class="on"':'')+'>'+p.r+'</button>').join("")+'</div>'+
     '<div class="esc-leg">Saldo do dia: <b style="color:'+(saldo<0?"var(--verde)":"var(--vermelho)")+'">'+
-      (saldo>0?"+":"")+Math.round(saldo).toLocaleString("pt-BR")+' kcal</b>'+
+      comSinal(saldo)+' kcal</b>'+
+      (gd.total>g? '<br>Caminhada, treino e esporte entram só no gasto: <b>'+gd.total.toLocaleString("pt-BR")+' kcal</b> neste dia.' : '')+
       '<br>Este dia entra como <b>estimado</b>, não medido.</div>';
   c.innerHTML=html;
-  c.querySelectorAll("[data-nv]").forEach(b=> b.onclick=()=>{ e.nivel=+b.dataset.nv; salvar(); pintaNutri(); });
-  c.querySelectorAll("[data-tp]").forEach(b=> b.onclick=()=>{ e.tipo=+b.dataset.tp; salvar(); pintaNutri(); });
-  c.querySelectorAll("[data-pr]").forEach(b=> b.onclick=()=>{
-    e.prot3 = e.prot3===b.dataset.pr? null : b.dataset.pr; salvar(); pintaNutri(); });
+  const muda=fn=>()=>{ if(dia.encerrado){ toast("Dia encerrado. Reabra para mudar."); return; } fn(); salvar(); pintaNutri(); };
+  c.querySelectorAll("[data-nv]").forEach(b=> b.onclick=muda(()=>{ e.nivel=+b.dataset.nv; }));
+  c.querySelectorAll("[data-ps]").forEach(b=> b.onclick=muda(()=>{ e.pers=+b.dataset.ps; delete e.tipo; }));
+  c.querySelectorAll("[data-pr]").forEach(b=> b.onclick=muda(()=>{
+    e.prot3 = e.prot3===b.dataset.pr? null : b.dataset.pr; }));
 }
 const nutriModo = pintaNutri;
 pintaNutri = function(){
@@ -5406,7 +5509,7 @@ pintaNutri = function(){
   pintaModos();
   const e=dia.estimado, mini=$("nMini");
   if(e && mini) mini.innerHTML += '<span class="selo-est">estimado · '+
-    (e.modo==="viagem"? "viagem nível "+e.nivel : "rápido tipo "+e.tipo)+'</span>';
+    (e.modo==="viagem"? "viagem nível "+e.nivel : "rápido · "+nomeRapido(e).toLowerCase())+'</span>';
   const f=$("faltaDia");
   if(e && f && !dia.encerrado) f.textContent = dia.treino? "pronto para encerrar" : "falta: treino ou descanso";
 };
@@ -5653,8 +5756,8 @@ graficosPainel = function(ent){
     return gd? {iso, v:gd.total} : null;
   }).filter(Boolean);
   g.push(grafLinha({titulo:"Gasto diário estimado", pts:gastos, cor:"#6E9BC5", unY:" kcal",
-    legY:"TMB × fator de caminhada, mais treino e pelada do dia", menorMelhor:false,
-    nota:"Sobe nos dias de treino, pelada e caminhada alta."}));
+    legY:"TMB × fator de caminhada, mais treino e esporte do dia", menorMelhor:false,
+    nota:"Sobe nos dias de treino, esporte e caminhada alta."}));
 
   /* volume de treino */
   const vols=ent.filter(([,d])=>d.treino&&d.treino!=="descanso"&&d.treino.detalhe)
@@ -7477,8 +7580,8 @@ function gastoDoDia(iso, d){
   const f=d.caminhada==="alta"?1.35:d.caminhada==="media"?1.25:1.15;
   const base=Math.round(tmbDe(iso,pk)*f);
   const treino=kcalDeDia(iso,d);
-  const pelada=d.pelada==="sim"? kcalPelada(pk) : 0;
-  return {base, treino, pelada, total:base+treino+pelada};
+  const esporte=kcalEsporte(d);
+  return {base, treino, esporte, total:base+treino+esporte};
 }
 resumo = (function(orig){
   return function(ent){
@@ -7496,8 +7599,8 @@ gastoDia = (function(orig){
   return function(){
     const o=orig();
     const t=kcalDeDia(dataSel, dia);
-    const pel = dia.pelada==="sim"? kcalPelada(dia.peso||pesoAtual()) : 0;
-    return {base:o.base, treino:t, pelada:pel, total:o.base+t+pel};
+    const esp=kcalEsporte(dia);
+    return {base:o.base, treino:t, esporte:esp, total:o.base+t+esp};
   };
 })(gastoDia);
 
@@ -7524,7 +7627,7 @@ function pintaCatalogoProdutos(){
   c.querySelectorAll("[data-rm]").forEach(b=> b.onclick=()=>{
     const i=+b.dataset.rm, a=CATALOGO_AL[i];
     if(!confirm("Excluir “"+a.n+"” do seu catálogo?")) return;
-    CATALOGO_AL.splice(i,1); invalidaBase(); salvar();
+    CATALOGO_AL.splice(i,1); tiraDaCopia(a.n); invalidaBase(); salvar();
     pintaCatalogoProdutos(); toast("Produto excluído.");
   });
 }
@@ -7555,6 +7658,7 @@ $("ceSalvar").onclick=()=>{
   const pr=parseFloat(($("ceProt").value||"").replace(",","."))||0;
   if(!nome||isNaN(kc)){ toast("Preencha nome e calorias."); return; }
   const a=CATALOGO_AL[catEditIdx];
+  if(chaveProd(a)!==chaveProd({n:nome})) tiraDaCopia(a.n);       // renomeado: o nome antigo sai da cópia de segurança
   a.n=nome; a.k=+kc.toFixed(1); a.p=+pr.toFixed(1);
   invalidaBase(); salvar();
   $("folhaCatEdit").classList.remove("on");
@@ -7641,11 +7745,14 @@ $("arqBackup").onchange=e=>{
       const nDias=Object.keys(DIAS).filter(k=>diaTemConteudo(DIAS[k])).length;
       if(!confirm("Restaurar este arquivo?\n\nEle traz: "+descreveBackup(dados)+
           ".\n\nSó esses itens serão substituídos neste aparelho. Hoje o app tem "+nDias+
-          " dia(s) registrado(s).\nUma cópia do estado atual fica guardada para você desfazer.")){
+          " dia(s) registrado(s).\nOs produtos do catálogo são somados aos que já existem, nenhum some."+
+          "\nUma cópia do estado atual fica guardada para você desfazer.")){
         return; }
       const anterior=JSON.parse(JSON.stringify(estadoAtual()));
       await BD.set("estado_anterior", anterior);
-      await BD.set("estado", {...anterior, ...dados, ...("dias" in dados? {abdV:dados.abdV||1} : {})});
+      const novo={...anterior, ...dados, ...("dias" in dados? {abdV:dados.abdV||1} : {})};
+      if(Array.isArray(dados.catalogoAl)) novo.catalogoAl=juntaCatalogos(anterior.catalogoAl||[], dados.catalogoAl);
+      await BD.set("estado", novo);
       await restaurarEstado();
       toast("Backup restaurado.", ()=>{ voltaEstadoAnterior(); });
     }catch(x){ toast(x && x.message? x.message : "Arquivo não reconhecido."); }
@@ -8222,6 +8329,253 @@ pintaBusca = function(){
   });
   if(!q && res.querySelector("[data-al]") && Object.values(freq).some(v=>v>0))
     res.insertAdjacentHTML("afterbegin",'<div class="rot" style="padding:0 0 6px">Seus mais usados</div>');
+};
+
+/* ================= textos de fora não viram código na tela =================
+   nomes da Open Food Facts (base colaborativa: qualquer pessoa edita) e o que é digitado entram nas listas
+   como HTML; < > e aspas viram sinais parecidos e inofensivos */
+function textoSeguro(s){ return String(s==null? "" : s).replace(/</g,"‹").replace(/>/g,"›").replace(/"/g,"”"); }
+paraItem = (function(orig){
+  return function(p){ const a=orig(p); if(a) a.n=textoSeguro(a.n); return a; };
+})(paraItem);
+const pdSalvarSeg=$("pdSalvar").onclick;
+$("pdSalvar").onclick=function(){ $("pdNome").value=textoSeguro($("pdNome").value); return pdSalvarSeg.apply(this,arguments); };
+const ceSalvarSeg=$("ceSalvar").onclick;
+$("ceSalvar").onclick=function(){ $("ceNome").value=textoSeguro($("ceNome").value); return ceSalvarSeg.apply(this,arguments); };
+const refSalvarSeg=$("refSalvar").onclick;
+$("refSalvar").onclick=function(){ $("refTxt").value=textoSeguro($("refTxt").value); return refSalvarSeg.apply(this,arguments); };
+/* o que já estava salvo passa pela mesma limpeza ao carregar */
+function limpaTextosSalvos(){
+  CATALOGO_AL.forEach(a=>{ if(a && a.n) a.n=textoSeguro(a.n); });
+  Object.values(DIAS).forEach(d=>(d.refeicoes||[]).forEach(r=>{
+    if(r.txt) r.txt=textoSeguro(r.txt);
+    (r.itens||[]).forEach(it=>{ if(it.n) it.n=textoSeguro(it.n); });
+  }));
+}
+
+/* ================= catálogo de produtos com cópia de segurança =================
+   uma cópia separada do estado, que só perde um produto quando você o exclui ou renomeia;
+   ao abrir o app, o que estiver nela e faltar no catálogo volta sozinho */
+const CHAVE_COPIA_CAT="ficha:catalogoCopia";
+const chaveProd = a => String((a&&a.n)||"").trim().toLowerCase();
+function leCopiaCatalogo(){
+  try{ const c=JSON.parse(localStorage.getItem(CHAVE_COPIA_CAT)||"[]"); return Array.isArray(c)? c : []; }catch(e){ return []; }
+}
+/* produtos das duas listas, sem repetir nome; nos repetidos vale o da primeira */
+function juntaCatalogos(base, extra){
+  const vistos=new Set((base||[]).map(chaveProd));
+  return (base||[]).concat((extra||[]).filter(a=>{
+    const k=chaveProd(a); if(!k || vistos.has(k)) return false;
+    vistos.add(k); return true; }));
+}
+function copiaCatalogo(){
+  try{ localStorage.setItem(CHAVE_COPIA_CAT, JSON.stringify(juntaCatalogos(CATALOGO_AL, leCopiaCatalogo()))); }catch(e){}
+}
+function tiraDaCopia(nome){
+  const k=chaveProd({n:nome});
+  try{ localStorage.setItem(CHAVE_COPIA_CAT, JSON.stringify(leCopiaCatalogo().filter(a=>chaveProd(a)!==k))); }catch(e){}
+}
+function recuperaDaCopia(){
+  const antes=CATALOGO_AL.length;
+  CATALOGO_AL=juntaCatalogos(CATALOGO_AL, leCopiaCatalogo());
+  invalidaBase();
+  return CATALOGO_AL.length-antes;
+}
+
+/* ================= esporte no lugar da pelada =================
+   intensidade do dia, com ajuste fino de 50 em 50 kcal; entra só no gasto.
+   Dias antigos de pelada viram esporte com as mesmas calorias que já tinham. */
+const ESPORTE=[{k:"baixa", r:"Baixa", kcal:400}, {k:"moderada", r:"Moderada", kcal:550}, {k:"alta", r:"Alta", kcal:700}];
+function kcalEsporte(d){ return (d && d.esporte && d.esporte.kcal>0)? d.esporte.kcal : 0; }
+function convertePeladas(){
+  Object.entries(DIAS).forEach(([iso,d])=>{
+    if(d.pelada==="sim" && !d.esporte){
+      const pk=d.peso || pesoNaData(iso) || (medicaoPara(iso)||{}).peso;
+      const kcal=kcalPelada(pk) || 700;
+      d.esporte={int: kcal>=625? "alta" : kcal>=475? "moderada" : "baixa", kcal};
+    }
+    delete d.pelada;
+  });
+}
+const pintaMarcadoresEsp = pintaMarcadores;
+pintaMarcadores = function(){
+  pintaMarcadoresEsp();
+  const c=$("marcadores"), e=dia.esporte, d=document.createElement("div");
+  d.innerHTML='<div class="rot">Pratiquei algum esporte?</div><div class="grupo">'+
+    ESPORTE.map(x=>'<button data-esp="'+x.k+'"'+(e && e.int===x.k?' class="on"':'')+'>'+x.r+' · '+x.kcal+'</button>').join("")+'</div>'+
+    (e? '<div class="ajuste-esp"><button data-espaj="-50" aria-label="Menos 50 kcal">−</button>'+
+        '<span><b>'+e.kcal.toLocaleString("pt-BR")+'</b> kcal no gasto do dia</span>'+
+        '<button data-espaj="50" aria-label="Mais 50 kcal">+</button></div>' : '');
+  const treino=[...c.children].find(x=>x.textContent.startsWith("Treino de hoje"));
+  c.insertBefore(d, treino||null);
+  d.querySelectorAll("[data-esp]").forEach(b=> b.onclick=()=>{
+    if(dia.encerrado) return;
+    const x=ESPORTE.find(o=>o.k===b.dataset.esp);
+    dia.esporte = (dia.esporte && dia.esporte.int===x.k)? null : {int:x.k, kcal:x.kcal};
+    pintaNutri();
+  });
+  d.querySelectorAll("[data-espaj]").forEach(b=> b.onclick=()=>{
+    if(dia.encerrado || !dia.esporte) return;
+    dia.esporte.kcal=Math.max(50, Math.min(3000, dia.esporte.kcal + +b.dataset.espaj));
+    pintaNutri();
+  });
+};
+
+/* ================= Mounjaro: situação do tratamento no perfil =================
+   em andamento: a linha do dia fica só com "Apliquei", para marcar no dia da aplicação;
+   concluído: a linha aparece desligada, avisando que o tratamento terminou */
+const statusMounjaro = () => PERFIL.mounjaro==="concluido"? "concluido" : "andamento";
+const pintaMarcadoresMj = pintaMarcadores;
+pintaMarcadores = function(){
+  pintaMarcadoresMj();
+  const c=$("marcadores"), linha=[...c.children].find(x=>x.textContent.startsWith("Mounjaro"));
+  if(!linha) return;
+  const nao=linha.querySelector('[data-mk="mounjaro_nao"]'); if(nao) nao.remove();
+  if(statusMounjaro()==="concluido"){
+    linha.classList.add("desligada");
+    linha.querySelectorAll("button").forEach(b=>b.disabled=true);
+    const dose=[...c.children].find(x=>x.textContent.startsWith("Dose aplicada")); if(dose) dose.remove();
+    linha.insertAdjacentHTML("beforeend",'<div class="nota-marc">Tratamento encerrado. Para voltar a registrar, mude no perfil.</div>');
+  } else linha.insertAdjacentHTML("beforeend",'<div class="nota-marc">Marque só no dia da aplicação.</div>');
+};
+
+/* ================= lembrete de backup ================= */
+const CHAVE_ULT_BACKUP="ficha:ultimoBackup", CHAVE_ADIA_BACKUP="ficha:lembreteBackup";
+const lsLe = k => { try{ return localStorage.getItem(k); }catch(e){ return null; } };
+function diasDesdeBackup(){
+  const u=lsLe(CHAVE_ULT_BACKUP); if(!u) return null;
+  const [a1,m1,d1]=u.split("-").map(Number), [a2,m2,d2]=HOJE_ISO.split("-").map(Number);
+  return Math.max(0, Math.round((Date.UTC(a2,m2-1,d2)-Date.UTC(a1,m1-1,d1))/86400000));
+}
+const backupLembra=$("btBackup").onclick;
+$("btBackup").onclick=function(){
+  backupLembra.apply(this,arguments);
+  try{ localStorage.setItem(CHAVE_ULT_BACKUP, isoLocal()); localStorage.removeItem(CHAVE_ADIA_BACKUP); }catch(e){}
+  if(!$("perfil").classList.contains("oculto")) pintaPerfil();
+  pintaPendencias();
+};
+/* na tela inicial, depois de 14 dias sem backup; ✕ adia uma semana */
+const listaPendenciasBk=listaPendencias;
+listaPendencias=function(){
+  const p=listaPendenciasBk();
+  const n=diasDesdeBackup(), adiado=lsLe(CHAVE_ADIA_BACKUP);
+  const comDados=Object.values(DIAS).filter(diaTemConteudo).length>=3;
+  if(comDados && (n==null || n>=14) && !(adiado && adiado>HOJE_ISO))
+    p.push({k:"backup", t: n==null? "Nenhum backup salvo ainda" : "Último backup há "+n+" dias",
+      s:"Seus dados ficam só neste aparelho · ✓ salva o arquivo agora",
+      abrir:()=>$("btBackup").click(),
+      fechar:()=>{ const d=new Date(); d.setDate(d.getDate()+7);
+        try{ localStorage.setItem(CHAVE_ADIA_BACKUP, isoLocal(d)); }catch(e){} }});
+  return p.slice(0,3);
+};
+
+/* perfil: situação do Mounjaro e data do último backup */
+const pintaPerfilNovo = pintaPerfil;
+pintaPerfil = function(){
+  pintaPerfilNovo();
+  const c=$("pMounjaro");
+  c.innerHTML=[["andamento","Em andamento"],["concluido","Concluído"]].map(([k,r])=>
+    '<button data-mj="'+k+'"'+(statusMounjaro()===k?' class="on"':'')+'>'+r+'</button>').join("");
+  c.querySelectorAll("[data-mj]").forEach(b=> b.onclick=()=>{
+    if(statusMounjaro()===b.dataset.mj) return;
+    PERFIL.mounjaro=b.dataset.mj; perfilMudou(); });
+  const n=diasDesdeBackup();
+  $("btBackup").querySelector("small").innerHTML="gera um arquivo com tudo que você registrou · "+
+    (n==null? '<span class="atrasado">nenhum backup salvo ainda</span>'
+     : n===0? "último hoje"
+     : '<span'+(n>=7?' class="atrasado"':'')+'>último há '+n+' dia'+(n===1?"":"s")+'</span>');
+};
+
+/* ================= ordem dos exercícios no treino do dia =================
+   as setas sobem e descem o exercício só neste treino (a ficha não muda); a tela acompanha o exercício,
+   e um descanso em andamento vai junto com ele */
+function moveExercicio(i, dir){
+  const j=i+dir;
+  if(!est || j<0 || j>=est.length) return;
+  const antes=document.querySelectorAll("#lista .ex")[i];
+  const topoAntes=antes? antes.getBoundingClientRect().top : null;
+  const agora=Date.now(), alvos={};
+  Object.keys(ALVOS).forEach(k=>{ if(ALVOS[k]>agora) alvos[k]=ALVOS[k]; });
+  zeraCronometros();                                   // os números dos exercícios mudam de lugar
+  [est[i],est[j]]=[est[j],est[i]];
+  desenha(); soma();
+  Object.keys(alvos).forEach(k=>{
+    const n = +k===i? j : +k===j? i : +k;
+    play(n); ALVOS[n]=alvos[k];
+  });
+  corrigeCronometros();
+  const bloco=document.querySelectorAll("#lista .ex")[j]; if(!bloco) return;
+  if(topoAntes!=null) window.scrollBy(0, bloco.getBoundingClientRect().top-topoAntes);
+  bloco.classList.remove("movido"); void bloco.offsetWidth; bloco.classList.add("movido");
+}
+const desenhaOrdem = desenha;
+desenha = function(){
+  desenhaOrdem();
+  if(!est || est.length<2) return;
+  const blocos=document.querySelectorAll("#lista .ex");
+  est.forEach((e,i)=>{
+    const b=blocos[i]; if(!b || b.querySelector(".mover")) return;
+    /* na linha do cronômetro sobra espaço; sem ela (feito/não feito, ou "não vou fazer"), vão no cabeçalho */
+    const lugar=(!e.pulado && b.querySelector(".crono")) || b.querySelector(".cab"); if(!lugar) return;
+    lugar.insertAdjacentHTML("beforeend",'<span class="mover">'+
+      '<button data-sobe="'+i+'"'+(i===0?' disabled':'')+' aria-label="Subir exercício">↑</button>'+
+      '<button data-desce="'+i+'"'+(i===est.length-1?' disabled':'')+' aria-label="Descer exercício">↓</button></span>');
+  });
+  document.querySelectorAll("#lista [data-sobe]").forEach(b=> b.onclick=()=>moveExercicio(+b.dataset.sobe,-1));
+  document.querySelectorAll("#lista [data-desce]").forEach(b=> b.onclick=()=>moveExercicio(+b.dataset.desce,1));
+};
+
+/* ================= Meu Desempenho: intervalo personalizado ================= */
+function marcaPeriodo(bt){
+  document.querySelectorAll("#painel .periodo button").forEach(x=>x.classList.toggle("on", x===bt));
+  $("perDatas").classList.toggle("oculto", bt!==$("perPers"));
+}
+document.querySelectorAll("[data-per]").forEach(b=> b.onclick=()=>{ periodo=+b.dataset.per; marcaPeriodo(b); pintaPainel(); });
+$("perPers").onclick=()=>{
+  if(!perIni){ const d=new Date(); d.setDate(d.getDate()-29); perIni=isoLocal(d); perFim=HOJE_ISO; }
+  $("perIni").value=perIni; $("perFim").value=perFim;
+  $("perIni").max=HOJE_ISO; $("perFim").max=HOJE_ISO;
+  periodo="p"; marcaPeriodo($("perPers")); pintaPainel();
+};
+["perIni","perFim"].forEach(id=> $(id).onchange=()=>{
+  let a=$("perIni").value||perIni, b=$("perFim").value||perFim;
+  if(b>HOJE_ISO) b=HOJE_ISO;
+  if(a>b) [a,b]=[b,a];
+  perIni=a; perFim=b; $("perIni").value=a; $("perFim").value=b;
+  pintaPainel();
+});
+
+/* "apagar tudo" também leva a cópia do catálogo e as marcas deste aparelho, e nada é regravado no caminho */
+const resetOkSeg=$("resetOk").onclick;
+$("resetOk").onclick=async function(){
+  gravacaoParada="apagando";
+  try{ [CHAVE_COPIA_CAT, CHAVE_VERSAO, CHAVE_ULT_BACKUP, CHAVE_ADIA_BACKUP].forEach(k=>localStorage.removeItem(k)); }catch(e){}
+  return resetOkSeg.apply(this,arguments);
+};
+
+/* ================= carregamento protegido =================
+   enquanto os dados salvos são lidos (ao abrir o app ou ao restaurar um backup), nada é gravado; se a leitura
+   falhar no meio, o app para de gravar em vez de salvar um estado incompleto por cima do que está guardado */
+function protegeArmazenamento(){       // pede ao navegador para não apagar os dados em limpezas automáticas
+  try{
+    if(navigator.storage && navigator.storage.persisted && navigator.storage.persist)
+      navigator.storage.persisted().then(ok=>{ if(!ok) return navigator.storage.persist(); }).catch(()=>{});
+  }catch(e){}
+}
+let jaCarregou=false;
+const restaurarProtegido=restaurarEstado;
+restaurarEstado=async function(){
+  dadosCarregados=false;
+  try{ await restaurarProtegido(); }
+  catch(e){ paraGravacao("falha"); throw e; }
+  limpaTextosSalvos();
+  convertePeladas();
+  const voltaram=recuperaDaCopia();
+  if(!jaCarregou){ jaCarregou=true; minhaVersao=versaoSalva(); protegeArmazenamento(); }
+  dadosCarregados=true;
+  if(window.gravaAgora) await window.gravaAgora();
+  pintaHome(); pintaNutri();
+  if(voltaram) toast(voltaram+" produto(s) do catálogo voltaram da cópia de segurança.");
 };
 
 restaurarEstado().catch(()=>toast("Não consegui carregar todos os dados salvos."));
