@@ -903,6 +903,10 @@ small.bom{color:var(--verde)} small.ruim{color:var(--vermelho)} small.zero{color
   color:var(--medio);font-size:15px;line-height:1;padding:0}
 .mover button:disabled{opacity:.25}
 .mover button:active{border-color:var(--brasa);color:var(--brasa)}
+.ed-data{display:flex;align-items:center;gap:10px;margin-top:9px;color:#C79A3E}
+.ed-data input{flex:1;min-width:0;background:var(--sub);border:1px solid #3D3524;border-radius:8px;color:var(--texto);
+  font-size:14px;padding:7px 9px;font-family:inherit;outline:none;color-scheme:dark}
+.ed-data input:focus{border-color:var(--brasa)}
 .ex.movido{animation:movido 1s ease-out}
 @keyframes movido{from{background:#2A2110}to{background:transparent}}
 
@@ -8544,6 +8548,62 @@ $("perPers").onclick=()=>{
   perIni=a; perFim=b; $("perIni").value=a; $("perFim").value=b;
   pintaPainel();
 });
+
+/* ================= mudar a data de um treino do histórico =================
+   na edição de um treino gravado (toque no histórico), a data pode ser trocada; nunca ficam dois treinos
+   no mesmo dia. Um dia marcado como descanso recebe o treino normalmente. */
+const temTreino = t => !!t && t!=="descanso" && !!(((t.detalhe||[]).length) || t.cardio);
+const nomeTreino = t => t.ficha==="Cardio"? "o cardio" : "o Treino "+t.ficha;
+function avisoEdicaoData(){
+  const so=!est || !est.length;
+  $("avisoEdicao").innerHTML = so
+    ? "Dia sem musculação — registre apenas o cardio de "+dtBr(editandoSessao)+"."
+    : "Editando o treino de "+dtBr(editandoSessao)+". Ao encerrar, o gasto e o saldo daquele dia são recalculados.";
+  campoDataTreino();
+}
+function campoDataTreino(){
+  if(!editandoSessao || $("edData")) return;
+  $("avisoEdicao").insertAdjacentHTML("beforeend",
+    '<label class="ed-data">Data do treino<input type="date" id="edData" max="'+HOJE_ISO+'" value="'+editandoSessao+'"></label>');
+  $("edData").onchange=()=>{ if(!moveTreino(editandoSessao, $("edData").value)) $("edData").value=editandoSessao; };
+}
+function moveTreino(de, para){
+  const t=DIAS[de] && DIAS[de].treino;
+  if(!t || !para || para===de) return false;
+  if(para>HOJE_ISO){ toast("Escolha uma data até hoje."); return false; }
+  const alvo=DIAS[para] && DIAS[para].treino;
+  if(temTreino(alvo)){
+    toast("Já existe "+nomeTreino(alvo)+" em "+dtBr(para)+". Não dá para ter dois treinos no mesmo dia."); return false; }
+  if(!DIAS[para]) DIAS[para]=diaVazio();
+  DIAS[para].treino=t; DIAS[de].treino=null;
+  const volta=()=>{
+    if(!DIAS[de]) DIAS[de]=diaVazio();
+    DIAS[de].treino=t; if(DIAS[para]) DIAS[para].treino=alvo||null;
+    if(editandoSessao===para){ editandoSessao=de; $("dataTreino").textContent=dtBr(de); avisoEdicaoData(); desenha(); }
+    salvar(); pintaHistorico(); pintaHome(); pintaNutri();
+  };
+  editandoSessao=para;
+  $("dataTreino").textContent=dtBr(para);
+  avisoEdicaoData(); desenha();
+  salvar(); pintaHistorico(); pintaHome(); pintaNutri();
+  toast(nomeTreino(t).replace(/^o /,"").replace(/^c/,"C")+" passou de "+dtBr(de).slice(0,5)+" para "+dtBr(para).slice(0,5)+
+    ". O dia "+dtBr(de).slice(0,5)+" ficou sem treino.", volta);
+  return true;
+}
+/* editar um treino gravado não é treino em andamento: sem isto, ao sair da edição o treino antigo
+   virava um "Retomar treino" de hoje (abrirTreino e retomaSessao liberam a gravação de novo) */
+const abreEdicaoSessaoData=abreEdicaoSessao;
+abreEdicaoSessao=function(iso){ abreEdicaoSessaoData(iso); sessaoFinalizada=true; campoDataTreino(); };
+const abreSoCardioData=abreSoCardio;
+abreSoCardio=function(iso){ abreSoCardioData(iso); sessaoFinalizada=true; campoDataTreino(); };
+/* encerrar um treino novo num dia que já tem treino salvo pergunta antes de substituir */
+const fimSemSobrepor=$("fim").onclick;
+$("fim").onclick=function(){
+  const t=dia && dia.treino;
+  if(!editandoSessao && temTreino(t) &&
+     !confirm("Já existe "+nomeTreino(t)+" salvo em "+dtBr(dataSel)+".\nEncerrar este treino substitui aquele.\n\nSubstituir?")) return;
+  return fimSemSobrepor.apply(this,arguments);
+};
 
 /* "apagar tudo" também leva a cópia do catálogo e as marcas deste aparelho, e nada é regravado no caminho */
 const resetOkSeg=$("resetOk").onclick;
