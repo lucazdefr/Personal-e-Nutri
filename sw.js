@@ -1,4 +1,4 @@
-const CACHE = "ficha-v10";
+const CACHE = "ficha-v11";
 const ARQUIVOS = ["./","./index.html","./manifest.webmanifest",
   "./icone-192.png","./icone-512.png","./icone-512-mask.png","./icone-180.png"];
 

@@ -903,6 +903,12 @@ small.bom{color:var(--verde)} small.ruim{color:var(--vermelho)} small.zero{color
   color:var(--medio);font-size:15px;line-height:1;padding:0}
 .mover button:disabled{opacity:.25}
 .mover button:active{border-color:var(--brasa);color:var(--brasa)}
+.livre-lin{display:flex;align-items:baseline;gap:10px;padding:2px 20px 10px}
+.livre-lin input{flex:1;min-width:0;background:none;border:0;border-bottom:1px solid var(--linha2);color:var(--texto);
+  font-size:26px;font-weight:600;padding:6px 1px;outline:none;font-variant-numeric:tabular-nums;font-family:inherit;border-radius:0}
+.livre-lin input:focus{border-bottom-color:var(--brasa)}
+.livre-lin input::placeholder{color:#3C3C44;font-weight:400}
+.livre-lin span{font-size:14px;color:var(--fraco)}
 .ed-data{display:flex;align-items:center;gap:10px;margin-top:9px;color:#C79A3E}
 .ed-data input{flex:1;min-width:0;background:var(--sub);border:1px solid #3D3524;border-radius:8px;color:var(--texto);
   font-size:14px;padding:7px 9px;font-family:inherit;outline:none;color-scheme:dark}
@@ -2013,7 +2019,7 @@ function pintaNum(pref){
   $(pref+"Prot").textContent=Math.round(proteina())+" g";
   $(pref+"Gasto").textContent=g.total.toLocaleString("pt-BR");
   const el=$(pref+"Saldo");
-  const semRegistro = !c && !dia.refeicoes.length && !dia.estimado;
+  const semRegistro = !c && !dia.refeicoes.length && (!dia.estimado || semValor(dia.estimado));
   el.textContent = semRegistro? "—" : (s>0?"+":"")+s.toLocaleString("pt-BR");
   el.className = semRegistro? "" : (s<0? "neg" : "pos");
 }
@@ -2937,9 +2943,9 @@ $("refSalvar").onclick=async()=>{
     itens: itensRef.map(x=>({...x})),
     kcal: Math.round(t.kcal), prot: +t.prot.toFixed(1),
     nota: null, semNumero};
-  if(editando!=null){ const antes={...dia.refeicoes[editando]};
-    dia.refeicoes[editando]=reg;
-    toast("Refeição atualizada.", ()=>{ dia.refeicoes[editando]=antes; pintaNutri(); });
+  if(editando!=null){ const idx=editando, alvo=dia, antes={...dia.refeicoes[idx]};   // o desfazer roda depois que "editando" volta a null
+    dia.refeicoes[idx]=reg;
+    toast("Refeição atualizada.", ()=>{ alvo.refeicoes[idx]=antes; pintaNutri(); });
   } else { dia.refeicoes.push(reg); toast("Refeição adicionada."); }
   editando=null; fechaRef(); pintaNutri();
 };
@@ -2956,7 +2962,7 @@ pintaRefeicoes = function(){
           (f==="cat"?"rótulo":"tabela")+'</span>').join(" ");
     const d=document.createElement("div"); d.className="refei";
     d.innerHTML='<div class="cabr"><span class="tipo">'+r.tipo+'</span>'+
-      '<span class="kc">'+(r.semNumero? "—" : r.kcal.toLocaleString("pt-BR")+' kcal · '+r.prot+' g')+'</span></div>'+
+      '<span class="kc">'+(r.semNumero? "—" : r.kcal.toLocaleString("pt-BR")+' kcal · '+String(r.prot).replace(".",",")+' g')+'</span></div>'+
       '<div class="desc">'+r.txt+'</div>'+
       '<div class="nota">'+marca+'</div>'+
       '<div class="toque">toque para editar</div>'+
@@ -5383,8 +5389,9 @@ pintaHome = function(){ homeP(); if(typeof pintaPendencias==="function") pintaPe
 pintaPendencias();
 
 /* ================= modos de registro do dia ================= */
-/* o consumo estimado parte do gasto base do dia (TMB × 1,15, o dia sem atividade): caminhada, treino e
-   esporte entram só no gasto. Antes ele seguia o gasto total, e cada atividade subia o consumo junto. */
+/* modo livre: você digita quanto acha que consumiu. Modo rápido: o consumo estimado parte do gasto base do
+   dia (TMB × 1,15, o dia sem atividade). Nos dois, caminhada, treino e esporte entram só no gasto. */
+/* modo viagem: saiu do app; os dias registrados nele antes continuam valendo */
 const NIVEIS = [
  {n:1, f:0.70, r:"Bem abaixo do normal"},
  {n:2, f:0.85, r:"Abaixo do normal"},
@@ -5421,14 +5428,22 @@ function deltaRapido(e){
 }
 const nomeRapido = e => (PERSONALIDADE.find(o=>o.p===e.pers)||{r:"registro antigo"}).r;
 const comSinal = n => (n>0?"+":"")+Math.round(n).toLocaleString("pt-BR");
+const seloModo = e => e.modo==="livre"? "livre" : e.modo==="viagem"? "viagem nível "+e.nivel : "rápido · "+nomeRapido(e).toLowerCase();
+/* modo livre ainda sem as calorias digitadas: o dia não conta como registrado */
+function semValor(e){ return !!e && e.modo==="livre" && e.livre==null; }
+function saldoModo(e, gasto){
+  if(semValor(e)) return "digite as calorias acima";
+  const s=(e.kcal||0)-gasto;
+  return '<b style="color:'+(s<0?"var(--verde)":"var(--vermelho)")+'">'+comSinal(s)+' kcal</b>';
+}
 function aplicaEstimativa(){
   const e=dia.estimado; if(!e) return;
-  const g=gastoBase();
   let kcal=0;
-  if(e.modo==="viagem"){
+  if(e.modo==="livre") kcal=Math.max(0, +e.livre||0);
+  else if(e.modo==="viagem"){
     const n=NIVEIS.find(x=>x.n===e.nivel)||NIVEIS[3];
-    kcal=Math.round(g*n.f);
-  } else kcal=Math.max(0, g+deltaRapido(e));
+    kcal=Math.round(gastoBase()*n.f);
+  } else kcal=Math.max(0, gastoBase()+deltaRapido(e));
   e.kcal=kcal;
   e.prot=(PROT3.find(p=>p.k===e.prot3)||{}).g || null;
 }
@@ -5437,7 +5452,7 @@ function aplicaEstimativa(){
 function pintaModos(){
   if(!$("modosDia")) return;
   const m=(dia.estimado&&dia.estimado.modo)||"dia";
-  $("modosDia").innerHTML=[["dia","Dia normal"],["viagem","Modo viagem"],["rapido","Modo rápido"]]
+  $("modosDia").innerHTML=[["dia","Dia normal"],["livre","Modo livre"],["rapido","Modo rápido"]]
     .map(([k,r])=>'<button data-mo="'+k+'"'+(m===k?' class="on"':'')+'>'+r+'</button>').join("");
   $("modosDia").querySelectorAll("[data-mo]").forEach(b=> b.onclick=()=>trocaModo(b.dataset.mo));
   pintaCorpoModo();
@@ -5448,7 +5463,7 @@ function trocaModo(novo){
   if(novo===atual) return;
   if(novo!=="dia" && dia.refeicoes.length){
     if(!confirm("Você já registrou "+dia.refeicoes.length+" refeição(ões) neste dia.\n"+
-      "Mudar para o modo "+(novo==="viagem"?"viagem":"rápido")+" descarta esses registros.\n\nDescartar?")) return;
+      "Mudar para o modo "+(novo==="livre"?"livre":"rápido")+" descarta esses registros.\n\nDescartar?")) return;
     const guardadas=dia.refeicoes.slice();
     dia.refeicoes=[];
     toast("Refeições descartadas.", ()=>{ dia.refeicoes=guardadas; dia.estimado=null; pintaNutri(); });
@@ -5457,7 +5472,11 @@ function trocaModo(novo){
     const e=dia.estimado; dia.estimado=null;
     if(e) toast("Voltou para registro por refeição.", ()=>{ dia.estimado=e; pintaNutri(); });
   } else {
-    dia.estimado={modo:novo, nivel:4, pers:4, prot3:null};
+    const antes=dia.estimado;                  // ao trocar de modo, o valor estimado e a proteína vêm junto
+    if(antes) aplicaEstimativa();
+    dia.estimado = novo==="livre"
+      ? {modo:"livre", livre: antes? antes.kcal : null, prot3: antes? antes.prot3 : null}
+      : {modo:novo, pers:4, prot3: antes? antes.prot3 : null};
   }
   salvar(); pintaNutri();
 }
@@ -5474,14 +5493,17 @@ function pintaCorpoModo(){
   if(caixaRef) caixaRef.classList.add("oculto");
   if($("listaRef")) $("listaRef").classList.add("oculto");
   aplicaEstimativa();
-  const g=gastoBase(), gd=gastoDia(), saldo=(e.kcal||0)-gd.total;
+  const g=gastoBase(), gd=gastoDia();
   let html="";
-  if(e.modo==="viagem"){
+  if(e.modo==="livre"){
+    html='<div class="esc-leg" style="padding-bottom:4px">Quantas calorias você acha que consumiu neste dia?</div>'+
+      '<div class="livre-lin"><input id="kcalLivre" inputmode="numeric" autocomplete="off" placeholder="ex.: 2000" value="'+
+        (e.livre!=null? e.livre : "")+'"'+(dia.encerrado? " disabled" : "")+'><span>kcal</span></div>'+
+      '<div class="esc-leg">Para comparar: o gasto base (o dia sem atividade) é <b>'+g.toLocaleString("pt-BR")+' kcal</b>.</div>';
+  } else if(e.modo==="viagem"){
     const n=NIVEIS.find(x=>x.n===e.nivel)||NIVEIS[3];
-    html='<div class="esc7">'+NIVEIS.map(x=>'<button data-nv="'+x.n+'"'+
-        (e.nivel===x.n?' class="on"':'')+'>'+x.n+'</button>').join("")+'</div>'+
-      '<div class="esc-leg"><b>'+n.r+'</b><br>'+Math.round(n.f*100)+'% do gasto base ('+g.toLocaleString("pt-BR")+
-      ' kcal, o dia sem atividade) · estimado em <b>'+(e.kcal||0).toLocaleString("pt-BR")+' kcal</b></div>';
+    html='<div class="esc-leg">Registro antigo do modo viagem: <b>nível '+n.n+' · '+n.r+'</b>, estimado em <b>'+
+      (e.kcal||0).toLocaleString("pt-BR")+' kcal</b>. Para mudar, use o modo livre ou o rápido.</div>';
   } else {
     const antigo = !PERSONALIDADE.some(o=>o.p===e.pers) && TIPOS_RAP_ANTIGOS[e.tipo]!=null;
     html='<div class="esc-leg" style="padding-bottom:6px">Personalidade do dia</div>'+
@@ -5496,14 +5518,22 @@ function pintaCorpoModo(){
   html+='<div class="esc-leg" style="padding-bottom:6px">Proteína aproximada (opcional)</div>'+
     '<div class="prot3">'+PROT3.map(p=>'<button data-pr="'+p.k+'"'+
       (e.prot3===p.k?' class="on"':'')+'>'+p.r+'</button>').join("")+'</div>'+
-    '<div class="esc-leg">Saldo do dia: <b style="color:'+(saldo<0?"var(--verde)":"var(--vermelho)")+'">'+
-      comSinal(saldo)+' kcal</b>'+
+    '<div class="esc-leg">Saldo do dia: <span id="saldoModo">'+saldoModo(e, gd.total)+'</span>'+
       (gd.total>g? '<br>Caminhada, treino e esporte entram só no gasto: <b>'+gd.total.toLocaleString("pt-BR")+' kcal</b> neste dia.' : '')+
       '<br>Este dia entra como <b>estimado</b>, não medido.</div>';
   c.innerHTML=html;
   const muda=fn=>()=>{ if(dia.encerrado){ toast("Dia encerrado. Reabra para mudar."); return; } fn(); salvar(); pintaNutri(); };
-  c.querySelectorAll("[data-nv]").forEach(b=> b.onclick=muda(()=>{ e.nivel=+b.dataset.nv; }));
   c.querySelectorAll("[data-ps]").forEach(b=> b.onclick=muda(()=>{ e.pers=+b.dataset.ps; delete e.tipo; }));
+  const inp=$("kcalLivre");
+  if(inp){                                   // os números mudam enquanto você digita; a tela inteira, ao sair do campo
+    inp.oninput=()=>{
+      const v=parseInt(inp.value.replace(/\D/g,""),10);
+      e.livre = isNaN(v)? null : Math.min(v, 20000);
+      aplicaEstimativa(); pintaNum("n");
+      $("saldoModo").innerHTML=saldoModo(e, gastoDia().total);
+    };
+    inp.onchange=()=>{ salvar(); pintaNutri(); };
+  }
   c.querySelectorAll("[data-pr]").forEach(b=> b.onclick=muda(()=>{
     e.prot3 = e.prot3===b.dataset.pr? null : b.dataset.pr; }));
 }
@@ -5512,15 +5542,18 @@ pintaNutri = function(){
   nutriModo();
   pintaModos();
   const e=dia.estimado, mini=$("nMini");
-  if(e && mini) mini.innerHTML += '<span class="selo-est">estimado · '+
-    (e.modo==="viagem"? "viagem nível "+e.nivel : "rápido · "+nomeRapido(e).toLowerCase())+'</span>';
+  if(e && mini) mini.innerHTML += '<span class="selo-est">estimado · '+seloModo(e)+'</span>';
   const f=$("faltaDia");
-  if(e && f && !dia.encerrado) f.textContent = dia.treino? "pronto para encerrar" : "falta: treino ou descanso";
+  if(e && f && !dia.encerrado){
+    const fl=(semValor(e)? ["calorias do dia"] : []).concat(dia.treino? [] : ["treino ou descanso"]);
+    f.textContent = fl.length? "falta: "+fl.join(", ") : "pronto para encerrar";
+  }
 };
 falta = (function(orig){
   return function(){
     if(!dia.estimado) return orig();
     const f=[];
+    if(semValor(dia.estimado)) f.push("calorias do dia");
     if(!dia.treino) f.push("treino ou descanso");
     if(dia.creatina===null) f.push("creatina");
     if(dia.agua===null) f.push("água");
@@ -5538,7 +5571,7 @@ resumo = (function(orig){
     let cons=0, prot=0, comDado=0;
     const salvoDia=dia, salvoSel=dataSel;
     ent.forEach(([iso,d])=>{
-      if(d.estimado){
+      if(d.estimado && !semValor(d.estimado)){
         r.estimados++; comDado++;
         dia=d; dataSel=iso; aplicaEstimativa();
         cons+=d.estimado.kcal||0; if(d.estimado.prot) prot+=d.estimado.prot;
@@ -5563,7 +5596,7 @@ pintaPainel = function(){
     d.className="mini"; d.style.cssText="padding:2px 2px 14px;line-height:1.6";
     d.innerHTML="Destes dias, <b style='color:var(--texto)'>"+r.medidos+
       "</b> foram registrados refeição a refeição e <b style='color:var(--brasa)'>"+
-      r.estimados+"</b> por estimativa (viagem ou modo rápido).";
+      r.estimados+"</b> por estimativa (modo livre ou rápido).";
     c.insertBefore(d, c.firstChild);
   }
 };
@@ -8549,6 +8582,47 @@ $("perPers").onclick=()=>{
   pintaPainel();
 });
 
+/* ================= refeição editada: a lista mostra os valores novos =================
+   a descrição gerada pelos itens ("Arroz 150g, Feijão 80g") era reaproveitada ao editar, e a lista ficava
+   com as quantidades antigas; agora ela é refeita ao salvar (texto escrito por você continua como está) */
+const textoDosItens = its => (its||[]).map(i=>i.n+" "+i.g+"g").join(", ");
+/* descrição no formato que os itens geram, mesmo que com quantidades antigas */
+function descricaoAutomatica(itens, txt){
+  const partes=String(txt||"").split(", ");
+  return !!(itens||[]).length && partes.length===itens.length &&
+    partes.every((p,k)=>p.startsWith(itens[k].n+" ") && /^\d+([.,]\d+)?g$/.test(p.slice(itens[k].n.length+1)));
+}
+/* refeições já salvas com a descrição presa à versão antiga são acertadas ao carregar */
+function reparaDescricoes(){
+  Object.values(DIAS).forEach(d=>(d.refeicoes||[]).forEach(r=>{
+    if(descricaoAutomatica(r.itens, r.txt)) r.txt=textoDosItens(r.itens);
+  }));
+}
+let txtAoAbrir="";
+const editarRefTxt=editarRef;
+editarRef=function(i){
+  editarRefTxt(i);
+  const r=dia.refeicoes[i];
+  if(r && descricaoAutomatica(r.itens, $("refTxt").value.trim())) $("refTxt").value="";
+  txtAoAbrir=$("refTxt").value.trim();
+};
+/* editar uma refeição salva e sair (voltar ou tocar fora) aplica a mudança, como "Salvar alteração";
+   antes ela virava rascunho, e a lista continuava com os valores antigos. Sem mudança, só fecha. */
+const assinaturaItens = its => (its||[]).map(i=>i.n+"|"+Math.round((+i.g||0)*10)).join(";");
+function salvaEdicaoAoSair(){
+  if(!folhaRef.classList.contains("on") || editando==null) return false;
+  const r=dia.refeicoes[editando];
+  if(!r || !itensRef.length) return false;
+  if(assinaturaItens(itensRef)!==assinaturaItens(r.itens) || $("refTxt").value.trim()!==txtAoAbrir){
+    $("refSalvar").onclick(); return true; }
+  const o=lerRascunhosRef(); delete o[chaveRascunhoRef()]; gravaRascunhosRef(o);
+  fechaRef(); return true;
+}
+const voltarEdicaoRef=voltarUmPasso;
+voltarUmPasso=function(){ return salvaEdicaoAoSair() || voltarEdicaoRef(); };
+const veuEdicaoRef=veu2.onclick;
+veu2.onclick=function(){ if(!salvaEdicaoAoSair()) return veuEdicaoRef.apply(this,arguments); };
+
 /* ================= mudar a data de um treino do histórico =================
    na edição de um treino gravado (toque no histórico), a data pode ser trocada; nunca ficam dois treinos
    no mesmo dia. Um dia marcado como descanso recebe o treino normalmente. */
@@ -8629,6 +8703,7 @@ restaurarEstado=async function(){
   try{ await restaurarProtegido(); }
   catch(e){ paraGravacao("falha"); throw e; }
   limpaTextosSalvos();
+  reparaDescricoes();
   convertePeladas();
   const voltaram=recuperaDaCopia();
   if(!jaCarregou){ jaCarregou=true; minhaVersao=versaoSalva(); protegeArmazenamento(); }
