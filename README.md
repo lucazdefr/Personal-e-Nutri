@@ -1,7 +1,8 @@
-# Personal e Nutri
+# Meu Personal
 
-App pessoal de acompanhamento de treino, progressão de carga e alimentação.
-Funciona offline, instalável no celular (PWA).
+App pessoal de acompanhamento de treino: fichas, progressão de carga, peso e medidas corporais.
+Funciona offline, instalável no celular (PWA). A parte de nutrição saiu das telas; os registros antigos
+continuam guardados no aparelho e no backup.
 
 ## Como publicar
 

@@ -1,6 +1,6 @@
 {
-  "name": "Personal e Nutri",
-  "short_name": "Personal e Nutri",
+  "name": "Meu Personal",
+  "short_name": "Meu Personal",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
